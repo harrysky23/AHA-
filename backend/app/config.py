@@ -22,6 +22,7 @@ class Settings:
     timeout_seconds: float = 45
     cache_ttl_seconds: int = 300
     cache_max_entries: int = 64
+    storyboard_max_output_tokens: int = 8192
 
     def validate_gemini(self):
         if not self.api_key:
@@ -44,11 +45,12 @@ def get_settings() -> Settings:
         timeout = float(values.get("AI_TIMEOUT_SECONDS", "45"))
         ttl = int(values.get("AHA_CACHE_TTL_SECONDS", "300"))
         entries = int(values.get("AHA_CACHE_MAX_ENTRIES", "64"))
-        if not 500 <= tokens <= 8192 or not 1 <= timeout <= 90 or not 0 <= ttl <= 3600 or not 1 <= entries <= 128:
+        story_tokens = int(values.get("STORYBOARD_MAX_OUTPUT_TOKENS", "8192"))
+        if not 500 <= tokens <= 8192 or not 1 <= timeout <= 90 or not 0 <= ttl <= 3600 or not 1 <= entries <= 128 or not 1024 <= story_tokens <= 16384:
             raise ValueError
     except (ValueError, TypeError):
-        raise ConfigurationError("출력 토큰 500–8192, 제한 시간 1–90초, 캐시 TTL 0–3600초·개수 1–128로 설정해 주세요.") from None
+        raise ConfigurationError("HTML 출력 토큰 500–8192, 스토리보드 1024–16384, 제한 시간 1–90초, 캐시 TTL 0–3600초·개수 1–128로 설정해 주세요.") from None
     return Settings(mode=mode, api_key=values.get("GEMINI_API_KEY", "") or "",
                     model=values.get("GEMINI_MODEL", "gemini-3.5-flash-lite") or "gemini-3.5-flash-lite",
                     max_output_tokens=tokens, timeout_seconds=timeout,
-                    cache_ttl_seconds=ttl, cache_max_entries=entries)
+                    cache_ttl_seconds=ttl, cache_max_entries=entries, storyboard_max_output_tokens=story_tokens)

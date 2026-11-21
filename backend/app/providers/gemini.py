@@ -10,7 +10,7 @@ from ..schemas import LessonSpec
 from ..services.errors import LearningError
 from ..services.prompts import build_messages
 from ..services.validation import load_json, parse_spec
-from .base import GenerationInput, ProviderResult
+from .base import GenerationInput, ProviderResult, StoryboardInput, StoryboardResult
 
 logger = logging.getLogger("aha.generation")
 API_SLOTS = asyncio.Semaphore(2)
@@ -18,9 +18,9 @@ MAX_RESPONSE_BYTES = 96 * 1024
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
-def response_schema() -> dict:
+def response_schema(source: dict | None = None) -> dict:
     """Use the documented schema subset; enforce all omitted constraints locally."""
-    source = LessonSpec.model_json_schema()
+    source = source if source is not None else LessonSpec.model_json_schema()
     definitions = source.get("$defs", {})
     allowed = {"type", "description", "enum", "minimum", "maximum", "required", "additionalProperties", "minItems", "maxItems"}
 
@@ -34,14 +34,14 @@ def response_schema() -> dict:
             result["properties"] = {key: convert(value) for key, value in node["properties"].items()}
         if "items" in node:
             result["items"] = convert(node["items"])
-        if "anyOf" in node:
-            # This schema only uses anyOf for nullable numeric quiz answers.
-            options = node["anyOf"]
+        if "anyOf" in node or "oneOf" in node:
+            options = node.get("anyOf", node.get("oneOf"))
             if len(options) == 2 and any(item.get("type") == "null" for item in options):
                 result = convert(next(item for item in options if item.get("type") != "null"))
                 result["type"] = [result["type"], "null"]
             else:
-                raise ValueError("Unsupported provider schema union")
+                # Storyboard types carry disjoint literal tags, so anyOf retains the union.
+                result["anyOf"] = [convert(option) for option in options]
         return result
 
     return convert(source)
@@ -102,16 +102,30 @@ class GeminiProvider:
         self.transport = transport
 
     async def generate(self, request: GenerationInput, request_id: str) -> ProviderResult:
+        messages = build_messages(request.concept, request.question, request.material, include_schema=False)
+        envelope = await self.generate_json(messages, response_schema(), self.settings.max_output_tokens, request_id)
+        return self.parse_response(envelope, request)
+
+    async def generate_storyboard(self, request: StoryboardInput, request_id: str) -> StoryboardResult:
+        from ..services.storyboard_prompts import build_storyboard_messages
+        from ..services.storyboard_validation import parse_storyboard
+        from ..storyboard_schema import StoryboardSpec
+        messages = build_storyboard_messages(request)
+        schema = response_schema(StoryboardSpec.model_json_schema())
+        envelope = await self.generate_json(messages, schema, self.settings.storyboard_max_output_tokens, request_id)
+        text, usage = self.response_text(envelope)
+        return StoryboardResult(parse_storyboard(text, request), self.model, usage)
+
+    async def generate_json(self, messages: list[dict], schema: dict, max_output_tokens: int, request_id: str) -> dict:
         try:
             self.settings.validate_gemini()
         except ConfigurationError:
             raise LearningError("gemini_not_configured", "Gemini 설정이 부족해요. 서버 .env의 GEMINI_API_KEY와 GEMINI_MODEL을 확인해 주세요.", 503) from None
-        messages = build_messages(request.concept, request.question, request.material, include_schema=False)
         payload = {
             "systemInstruction": {"parts":[{"text":messages[0]["content"]}]},
             "contents":[{"role":"user", "parts":[{"text":messages[1]["content"]}]}],
-            "generationConfig":{"responseMimeType":"application/json", "responseJsonSchema":response_schema(),
-                                "maxOutputTokens":self.settings.max_output_tokens},
+            "generationConfig":{"responseMimeType":"application/json", "responseJsonSchema":schema,
+                                "maxOutputTokens":max_output_tokens},
         }
         try:
             async with asyncio.timeout(2):
@@ -141,7 +155,7 @@ class GeminiProvider:
                             raise LearningError("gemini_invalid_response", "Gemini 응답을 JSON으로 읽지 못했어요. 기본 예제를 열 수 있어요.") from None
                         if response.status_code != 200:
                             raise diagnostic_error(response.status_code, envelope, response.headers, self.settings.api_key)
-            return self.parse_response(envelope, request)
+            return envelope
         except (httpx.TimeoutException, TimeoutError):
             raise LearningError("gemini_timeout", "Gemini 응답 시간이 초과됐어요. 다시 시도하거나 기본 예제를 열어 주세요.", 504) from None
         except httpx.HTTPError:
@@ -150,6 +164,10 @@ class GeminiProvider:
             API_SLOTS.release()
 
     def parse_response(self, envelope: dict, request: GenerationInput) -> ProviderResult:
+        text, usage = self.response_text(envelope)
+        return ProviderResult(parse_spec(text, request.material), self.model, usage)
+
+    def response_text(self, envelope: dict) -> tuple[str, dict]:
         try:
             feedback = envelope.get("promptFeedback", {})
             if feedback.get("blockReason") not in {None,"BLOCK_REASON_UNSPECIFIED"}:
@@ -173,11 +191,10 @@ class GeminiProvider:
                 if not isinstance(part.get("text"), str) or set(part) - {"text","thought","thoughtSignature"}:
                     raise ValueError
                 text.append(part["text"])
-            spec = parse_spec("".join(text), request.material)
             raw_usage = envelope.get("usageMetadata") or {}
             usage = {key:value for key,value in raw_usage.items()
                      if key in {"promptTokenCount","candidatesTokenCount","totalTokenCount","thoughtsTokenCount"}
                      and type(value) is int and value >= 0}
-            return ProviderResult(spec, self.model, usage)
+            return "".join(text), usage
         except (KeyError, IndexError, TypeError, ValueError, AttributeError, RecursionError):
             raise LearningError("gemini_invalid_response", "Gemini 응답이 비어 있거나 완성된 텍스트 명세가 아니에요. 기본 예제를 열 수 있어요.") from None

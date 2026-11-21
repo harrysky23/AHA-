@@ -4,7 +4,8 @@
 - Phase 1: implemented; original landing, demos and video assets preserved.
 - Phase 2: reuses PDF extraction, structured lesson specification, vetted rendering and fallback. Provider abstraction now supports fixed mock, real Gemini generateContent, and a network-free Elice placeholder. Validated output caching includes TTL/LRU and duplicate-request coalescing.
 - Current requested model: `gemini-3.5-flash-lite`, selected via environment variables. Actual call status and any upstream failures are recorded honestly in `PHASE2_NOTES.md`; HTTP test doubles are never counted as successful real generation.
-- See `PHASE2_NOTES.md` and README for evidence, free-tier/age/data-use limitations, setup and the explicit live-check command. Phase 3 remains unimplemented.
+- Phase 3-A: separate generic storyboard DSL/API implemented with mock and Gemini HTTP-double tests. See `PHASE3A_NOTES.md` and `STORYBOARD_DSL.md`. Actual storyboard API calls, video rendering, TTS and MP4 storage have not been tested/implemented in this phase.
+- See `PHASE2_NOTES.md` and README for earlier real-call evidence, free-tier/age/data-use limitations and setup.
 
 ## Phase 0 — repository inspection
 - Inspect existing `아하! v3.html` DOM, CSS, scripts, tabs, links, embedded base64 assets and behavior.
@@ -29,6 +30,7 @@
 - Acceptance: an actual Gemini run, question/PDF context reflected in a validated lesson, working graph, cache reuse and graceful fallback. Report upstream failure status/messages when blocked; do not substitute HTTP fixtures for successful generation.
 
 ## Phase 3 — independent shorts pipeline
+- Phase 3-A: `POST /api/storyboard`, StoryboardSpec, six allowlisted visualization types, timing/reference/source validation, separate prompt/schema/cache, and opt-in live-check script. Existing HTML/shorts API behavior is unchanged.
 - Generate storyboard/script separately from HTML.
 - Render vertical animation using programmatic motion graphics, add narration using a verified TTS service, encode with FFmpeg.
 - Add background job handling, progress, export and failure fallback.

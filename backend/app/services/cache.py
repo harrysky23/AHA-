@@ -10,6 +10,7 @@ import json
 import secrets
 from threading import RLock
 import time
+from typing import Generic, TypeVar
 
 from ..config import Settings
 from ..providers.base import GenerationInput, ProviderResult
@@ -17,37 +18,40 @@ from ..schemas import LessonSpec
 from .errors import LearningError
 from . import prompts
 
+Value = TypeVar("Value")
 
 @dataclass
-class Entry:
+class Entry(Generic[Value]):
     expires_at: float
-    value: ProviderResult
+    value: Value
 
 
-class LessonCache:
+class LessonCache(Generic[Value]):
     def __init__(self, clock=time.monotonic):
         self.clock = clock
         self.salt = secrets.token_bytes(32)
-        self.entries: OrderedDict[str, Entry] = OrderedDict()
-        self.pending: dict[str, Future] = {}
+        self.entries: OrderedDict[str, Entry[Value]] = OrderedDict()
+        self.pending: dict[str, Future[Value]] = {}
         self.lock = RLock()
 
     def key(self, provider: str, model: str, settings: Settings, request: GenerationInput) -> str:
         # Exact sent data, schema, prompt version and generation settings invalidate reuse.
         # Account separation protects against credential changes sharing prior outputs.
         credential = hmac.new(self.salt, settings.api_key.encode(), hashlib.sha256).hexdigest()
-        canonical = json.dumps({"provider":provider, "model":model, "credential":credential,
+        return self.fingerprint({"provider":provider, "model":model, "credential":credential,
             "prompt_version":prompts.PROMPT_VERSION, "schema":LessonSpec.model_json_schema(),
             "max_output_tokens":settings.max_output_tokens,
-            "messages":prompts.build_messages(request.concept,request.question,request.material,include_schema=False)},
-            sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+            "messages":prompts.build_messages(request.concept,request.question,request.material,include_schema=False)})
+
+    def fingerprint(self, payload: dict) -> str:
+        canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return hmac.new(self.salt, canonical.encode(), hashlib.sha256).hexdigest()
 
     def clear(self):
         with self.lock:
             self.entries.clear()
 
-    async def get_or_create(self, key: str, factory, ttl: int, max_entries: int) -> tuple[ProviderResult, str]:
+    async def get_or_create(self, key: str, factory, ttl: int, max_entries: int) -> tuple[Value, str]:
         if ttl == 0:
             self.clear()
             return await factory(), "disabled"
@@ -84,4 +88,4 @@ class LessonCache:
                 self.pending.pop(key, None)
 
 
-lesson_cache = LessonCache()
+lesson_cache: LessonCache[ProviderResult] = LessonCache()

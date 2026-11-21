@@ -22,6 +22,8 @@ Turn the student's study material and difficult concept into a personalized, vis
 - Run generated code in an isolated, constrained viewer; validate math and provide a review/quality checkpoint.
 
 ## Output B: independent learning short (slides 6, 9, 11)
+- Phase 3-A implements only the independent storyboard JSON stage: generic concepts, a 30–60 second/9:16 scene specification and six allowlisted visualization types. It uses a separate schema, prompt and cache from the Math II HTML path.
+- No MP4 rendering, TTS, FFmpeg execution or video storage is implemented in Phase 3-A. `/api/learn` shorts still provides the existing sample video; `/api/storyboard` returns JSON only.
 - 9:16 vertical video, target 30–60 seconds.
 - Pipeline: AI script/storyboard -> programmatic animation -> TTS -> FFmpeg encode/export.
 - NOT a recording of the interactive HTML screen.

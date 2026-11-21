@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import ConfigurationError
 from .routes.learn import router
+from .routes.storyboard import router as storyboard_router
 from .services.errors import LearningError
 import logging
 
@@ -62,6 +63,7 @@ if not logging.getLogger("aha.generation").handlers:
 app = FastAPI(title="AHA! Phase 2", version="0.2.0")
 app.add_middleware(BoundedBodyMiddleware)
 app.include_router(router)
+app.include_router(storyboard_router)
 app.mount("/static", StaticFiles(directory=FRONTEND / "static"), name="static")
 
 

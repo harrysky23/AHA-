@@ -1,18 +1,66 @@
-# AHA! (아하!) · Gemini 기반 Phase 2
+# AHA! (아하!) · Phase 2 + Phase 3-A
 
 기존 랜딩·수학·사회 데모를 유지하고 FastAPI에 **자료 업로드 → 질문 → 학습 방식 → JSON 학습 명세 → 인터랙티브 학습**을 연결했습니다.
 
-지원 개념은 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수**입니다. AI는 설명·수준·예제·확인 문제를 JSON으로 만들고, 검증된 로컬 HTML/JS 컴포넌트가 그래프를 계산합니다. AI가 만든 JavaScript는 실행하지 않습니다. 새 숏츠·TTS·영상 생성(Phase 3)은 구현하지 않았습니다.
+HTML 학습의 지원 개념은 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수**입니다. AI는 설명·수준·예제·확인 문제를 JSON으로 만들고, 검증된 로컬 HTML/JS 컴포넌트가 그래프를 계산합니다. Phase 3-A는 별도의 범용 영상 스토리보드 JSON을 추가합니다. AI 코드 실행·MP4 렌더링·TTS·FFmpeg·영상 저장은 구현하지 않았습니다.
 
 ## 현재 Provider
 
 | 값 | 동작 |
 | --- | --- |
-| `mock` | 질문에 관계없이 기존 수학 II 고정 예제. 키·외부 호출 없이 작동 |
+| `mock` | HTML은 고정 수학 II 예제, 스토리보드는 개념별 템플릿. 키·외부 호출 없이 작동 |
 | `gemini` | Gemini Developer API의 실제 `generateContent` 호출. 질문·추출 텍스트로 JSON 명세 생성 |
 | `elice` | 별도 준비 구현체. 실제 사양 확정 전에는 네트워크 호출 없이 연결 예정 오류 반환 |
 
 기본 모델은 **`gemini-3.5-flash-lite`**이며 `GEMINI_MODEL`로 바꿀 수 있습니다. 실제 생성 2건과 FastAPI·PDF·그래프·캐시 재사용을 검증했습니다. 처음 지정했던 2.5 모델의 404와 3.5의 일시적 503도 기록했습니다. 상세 결과는 [Phase 2 기록](docs/PHASE2_NOTES.md)을 참조하세요. HTTP 대역 테스트는 실제 AI 생성 성공으로 계산하지 않습니다.
+
+## Phase 3-A · 범용 스토리보드 JSON
+
+`POST /api/storyboard`를 추가했습니다. 기존 `/api/learn`의 HTML·기존 영상 응답과 프론트엔드는 유지합니다. 새 API는 `StoryboardSpec(schema_version=storyboard-1)`을 반환하며 `LessonSpec`과 분리되어 있습니다. 이번 단계는 스토리보드만 만들며, 영상이나 음성 생성 완료로 표시하지 않습니다.
+
+지원 시각화는 function_graph / process_diagram / timeline / comparison / state_transition / text_explanation입니다. 함수는 최대3차 계수·좌표만 받고 임의 수식 코드는 실행하지 않습니다. 그림은 제한된 노드·연결·좌표·동작 데이터만 받습니다. [DSL과 미래 렌더러 계약](docs/STORYBOARD_DSL.md)에 각 파라미터·상한·시간 해석을 정리했습니다.
+
+장면은 총30–60초, 9:16(1080×1920,30fps)이며 3–8개 장면을0초부터 연속 배치합니다. 겹침·공백·길이 초과·잘못된 참조·위조 인용·코드 필드는 검증 오류입니다. 한국어 내레이션은 텍스트만 작성하며 실제 발화 길이는 측정하지 않습니다. 근거가 모자라면 text_explanation과 부족한 맥락을 반환할 수 있습니다.
+
+먼저 실제 할당량을 사용하지 않는 mock 서버로 확인하세요.
+
+```bash
+AHA_AI_PROVIDER=mock python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8766
+```
+
+```bash
+curl -X POST http://127.0.0.1:8766/api/storyboard \
+  -F 'concept=물의 순환' \
+  -F 'question=증발과 응결이 어떻게 연결되나요?' \
+  -F 'format=shorts' \
+  -F 'target_duration_seconds=45' \
+  -F 'student_level=high_school'
+```
+
+| multipart 필드 | 규칙 |
+| --- | --- |
+| concept / question | 기존과 동일한200/2,000자. 하나 이상 필요 |
+| file | 기존 PDF/이미지1개·5 MiB 제한. 이미지·스캔 OCR 미지원 |
+| format | 생략 또는 storyboard/shorts. 항상 스토리보드 JSON 반환. HTML은 /api/learn |
+| target_duration_seconds | 기본45, 정수30–60 |
+| student_level | 기본 high_school. foundation/high_school/advanced |
+| consent | Gemini에서는 true 필수. mock에는 불필요 |
+
+Gemini 서버에서는 전송 안내를 확인한 뒤 `consent=true`를 추가하세요. 입력과 PDF 내용은 참고 데이터로 전달하며 자료 안의 실행 지시를 따르지 않도록 요청합니다. 응답의 `storyboard`에 명세, `generation`에 Provider·모델·독립 프롬프트 버전·캐시·사용량, `grounding`에 자료 상태를 담습니다. `rendering.status=not_implemented`, `video_generated=false`, `tts_generated=false`입니다.
+
+캐시는 기존 TTL/LRU·중복 요청 공유를 재사용하되 HTML과 별도의 저장소·namespace·프롬프트·스키마를 씁니다. 모델·목표 길이·수준·자료·출력 예산이 다르면 재사용하지 않습니다. 원문을 키·로그로 남기지 않고, 실패한 명세를 캐시하지 않습니다.
+
+```bash
+# .env가 Gemini여도 이 명령은 기본 mock입니다. 실제 API 미호출.
+python scripts/check_storyboard.py --all
+python scripts/check_storyboard.py --concept science --duration 30 --json
+
+# 아래만 실제 Gemini를 호출합니다. 실제 할당량 사용, 자동 재시도 없음.
+python scripts/check_storyboard.py --live --concept science
+# --live --all은 최대4회 호출하므로 필요한 경우에만 실행하세요.
+```
+
+이번 Phase 3-A에서는 실제 Gemini를 호출하지 않았습니다. HTTP 대역과 mock으로 검증했으며 새 스토리보드 스키마에 대한 실제 모델 응답 품질은 미확인입니다. 앞의 실제 생성2건은 Phase 2의 기록입니다. [Phase 3-A 개발·검증 기록](docs/PHASE3A_NOTES.md)을 참조하세요.
 
 ## 로컬 실행
 
@@ -58,6 +106,7 @@ AHA_CACHE_MAX_ENTRIES=64
 | `GEMINI_API_KEY` | Google AI Studio의 Gemini Developer API 키. 서버에서만 사용 |
 | `GEMINI_MODEL` | 공식 모델 ID. 기본 3.5 Flash-Lite. 자동 모델 전환 없음 |
 | `GEMINI_MAX_OUTPUT_TOKENS` | 출력 한도, 기본 4096 / 500–8192 |
+| `STORYBOARD_MAX_OUTPUT_TOKENS` | 스토리보드 전용 출력 예산, 기본8192 / 1024–16384. 기존 HTML 예산은 유지 |
 | `AI_TIMEOUT_SECONDS` | 모델 전체 제한 시간, 기본 45 / 1–90초 |
 | `AHA_CACHE_TTL_SECONDS` | 결과 재사용 유효 시간, 기본 300 / 0–3600초. 0은 캐시 비활성화·기존 항목 제거 |
 | `AHA_CACHE_MAX_ENTRIES` | 프로세스별 최대 캐시 항목, 기본 64 / 1–128 |
@@ -162,10 +211,15 @@ curl -X POST http://127.0.0.1:8765/api/learn \
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m pytest tests/test_api.py tests/test_phase2.py tests/test_providers_cache.py -q
+python -m pytest tests/test_storyboard.py -q
+# 기존+신규 전체 검사:
+python -m pytest -q
 node --check frontend/static/workflow.js
 ```
 
 일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경을 확인합니다.
+
+Phase 3-A 추가 후 전체 **155개**가 통과했습니다. 신규 검사는4개 개념,6종 시각화,30/45/60초, 시간·좌표·참조·인용·코드 거절과 기존 API 응답 유지를 포함합니다.
 
 브라우저 검증은 mock 서버를 실행해 진행합니다.
 
@@ -200,15 +254,20 @@ backend/app/
     gemini.py               Google generateContent
     elice.py                네트워크 없는 준비 구현체
   schemas.py                학습 명세·수학·인용 검증
+  storyboard_schema.py     별도 범용 영상 DSL·시간·참조 검증
   services/
     lessons.py              PDF → Provider → 검증 → 캐시 → 응답
     prompts.py              버전이 있는 프롬프트
     validation.py           공통 JSON 검증
     cache.py                메모리 TTL/LRU·동시 요청 공유
     materials.py, pdf_worker.py
+    storyboard*.py          스토리보드 생성·mock·독립 프롬프트·검증
+    uploads.py              기존·신규 API의 공통 파일 검증
+  routes/storyboard.py      POST /api/storyboard
 frontend/                   기존 랜딩·폼·격리된 그래프
 scripts/prepare_frontend.py  원본 + 폼으로 실행 HTML 재구성
 scripts/check_gemini.py      명시적 실제 호출 검증
+scripts/check_storyboard.py  기본 mock / 명시적 --live 스토리보드 검증
 tests/                      회귀·Provider·캐시·브라우저 검증
 references/                 보존한 HTML·기획 PDF
 ```
