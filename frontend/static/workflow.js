@@ -26,7 +26,7 @@
   function updateMode(mode, configured = true) {
     serverMode = mode;
     const isGemini = mode === 'gemini';
-    $('generation-mode').textContent = isGemini ? 'Gemini AI · 검증된 그래프 컴포넌트' : mode === 'elice' ? 'Elice · 향후 연결 예정' : 'mock · 고정 수학 예제, AI 아님';
+    $('generation-mode').textContent = isGemini ? 'Gemini AI · 질문에 맞춘 실습' : mode === 'elice' ? 'Elice · 향후 연결 예정' : 'mock · 고정 수학 예제, AI 아님';
     $('mode-note').textContent = isGemini ? '성인 개발·평가용 Gemini 모드예요. 질문과 PDF 추출 텍스트로 설명을 구성하며 같은 입력은 캐시를 재사용해요.' : mode === 'elice' ? 'Elice는 실제 API 사양 확정 후 연결할 예정이에요. 현재 네트워크 호출은 하지 않아요.' : 'mock 모드는 질문과 관계없이 고정 수학 II 예제를 사용해요. 실제 AI 분석이나 학습 수준 진단은 아니에요.';
     $('request-status').textContent = mode === 'elice' ? 'Elice는 아직 연결되지 않았어요. mock 또는 gemini로 설정해 주세요.' : !configured ? 'Gemini 인증 설정이 준비되지 않았어요. 서버 .env의 API 키를 확인해 주세요.' : isGemini ? 'Gemini 전송 안내를 확인한 뒤 학습 결과를 열어 주세요.' : 'mock 모드에서는 API 키 없이 체험할 수 있어요.';
     $('consent-option').hidden = !isGemini;
@@ -47,10 +47,10 @@
     $('video-renderer-note').hidden = claude;
     $('video-duration').disabled = claude;
     $('shorts-options').hidden=!shorts;
-    $('scope-title').textContent=shorts?'핵심 개념을 장면으로 연결해요':'이번에는 이 개념을 배워요';
-    $('scope-description').textContent=shorts?'수학·과학·사회·정보 개념을 30–60초의 세로형 영상으로 구성해요. 어려운 표현은 텍스트 설명으로 바꿀 수 있어요.':'수학 II · f(x)=x², 점 P(1,1)에서 할선의 기울기 2+h → 접선의 기울기 2';
+    $('scope-title').textContent=shorts?'핵심 개념을 장면으로 연결해요':serverMode==='gemini'?'입력한 개념을 직접 탐색해요':'이번에는 이 개념을 배워요';
+    $('scope-description').textContent=shorts?'수학·과학·사회·정보 개념을 30–60초의 세로형 영상으로 구성해요. 어려운 표현은 텍스트 설명으로 바꿀 수 있어요.':serverMode==='gemini'?'질문에 어울리는 그래프, 과정, 비교 등으로 직접 탐색하고 확인 문제를 풀 수 있어요.':'수학 II · f(x)=x², 점 P(1,1)에서 할선의 기울기 2+h → 접선의 기울기 2';
     $('mode-note').textContent=serverMode==='gemini'?'질문과 PDF 추출 텍스트로 설명을 구성하며 같은 입력의 생성 명세는 캐시를 재사용해요.':serverMode==='elice'?'Elice는 실제 API 사양 확정 후 연결할 예정이에요.':shorts?'mock은 네 가지 개념의 스토리보드 예제를 실제 영상으로 만들어요. AI 분석 결과가 아니에요.':'mock은 질문과 관계없이 고정 수학 II 예제를 사용해요. AI 분석 결과가 아니에요.';
-    $('question-note').textContent=shorts?'개념이나 질문 중 하나를 입력해 주세요. mock 예제: 미분계수, 물의 순환, 수요와 공급, 이진 탐색.':'개념이나 질문 중 하나를 입력해 주세요. 수학 II 미분계수·할선→접선 질문을 우선 지원해요.';
+    $('question-note').textContent=shorts?'개념이나 질문 중 하나를 입력해 주세요. mock 예제: 미분계수, 물의 순환, 수요와 공급, 이진 탐색.':'개념이나 질문 중 하나를 입력해 주세요. 특히 헷갈리는 부분을 적으면 실습에 반영할 수 있어요.';
     if (claude) {
       $('scope-description').textContent = 'Claude가 질문에 맞춰 약 30초 분량의 대본과 모션그래픽을 만들어요.';
       $('mode-note').textContent = 'PDF, 이미지 또는 UTF-8 텍스트 파일을 참고 자료로 올릴 수 있어요.';
@@ -113,7 +113,7 @@
   function render(data) {
     // Only locally owned, allowlisted viewers are accepted. Never inject response HTML.
     if (!['local_demo','mock','gemini'].includes(data.mode) || !['html', 'shorts'].includes(data.format)) throw new Error('지원하지 않는 학습 응답이에요.');
-    if (data.format === 'html' && data.lesson?.viewer_url !== '/lessons/secant-tangent') throw new Error('학습 예제 주소를 확인할 수 없어요.');
+    if (data.format === 'html' && !['/lessons/secant-tangent', '/lessons/interactive'].includes(data.lesson?.viewer_url)) throw new Error('학습 예제 주소를 확인할 수 없어요.');
     if (data.format === 'shorts' && data.video?.url !== '/static/media/derivative-explainer.mp4') throw new Error('영상 예제 주소를 확인할 수 없어요.');
     $('result-video').pause();
     $('result-video').removeAttribute('src'); $('result-video').load();
@@ -132,7 +132,7 @@
     $('video-view').hidden = data.format !== 'shorts';
     if (data.format === 'html') {
       const iframe = document.createElement('iframe');
-      iframe.title = '수학 II 할선에서 접선으로 인터랙티브 학습';
+      iframe.title = data.lesson.viewer_url === '/lessons/interactive' ? `${data.title} 인터랙티브 학습` : '수학 II 할선에서 접선으로 인터랙티브 학습';
       iframe.setAttribute('sandbox', 'allow-scripts');
       iframe.setAttribute('allow', "camera 'none'; microphone 'none'; geolocation 'none'");
       iframe.referrerPolicy = 'no-referrer';
@@ -198,10 +198,11 @@
       $('external-consent').focus(); return;
     }
     const body = new FormData();
-    body.set('concept', concept); body.set('question', question); body.set('format', form.elements.format.value);
+    const isShorts = form.elements.format.value === 'shorts';
+    body.set('concept', concept); body.set('question', question);
+    body.set('format', isShorts ? 'shorts' : serverMode === 'gemini' ? 'interactive' : 'html');
     if ($('external-consent').checked) body.set('consent', 'true');
     if (fileInput.files[0]) body.set('file', fileInput.files[0]);
-    const isShorts=form.elements.format.value==='shorts';
     if (isShorts) { body.set('student_level',$('video-level').value); body.set('target_duration_seconds',$('video-duration').value); }
     busy = true; submit.disabled = true;
     form.setAttribute('aria-busy', 'true');

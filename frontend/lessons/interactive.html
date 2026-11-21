@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>아하! 인터랙티브 학습</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#f6f2ff;color:#2d234b;font:16px/1.55 system-ui,sans-serif;overflow-wrap:anywhere}
+  main{max-width:820px;margin:auto;padding:clamp(14px,4vw,32px);display:grid;gap:16px}
+  [hidden]{display:none!important}
+  h1,h2,h3,p{margin:0}
+  h1{font-size:clamp(1.35rem,5vw,2rem);line-height:1.2}
+  h2{font-size:1.15rem}
+  .eyebrow{color:#603dd2;font-weight:800;font-size:.84rem}
+  .card{display:grid;gap:12px;padding:clamp(14px,3vw,24px);background:white;border:1px solid #e3d9ff;border-radius:18px}
+  .choices,.items,.movement{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  button{max-width:100%;min-height:42px;padding:7px 13px;border:1px solid #d8c9ff;background:#fff;border-radius:12px;color:#4926a7;font:inherit;font-weight:650;cursor:pointer;text-align:left}
+  button[aria-pressed=true]{background:#6b46dd;border-color:#6b46dd;color:white}
+  button:disabled{opacity:.45;cursor:default}
+  button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #5940ab;outline-offset:3px}
+  .detail,.feedback{display:grid;gap:7px;background:#f5f0ff;border-radius:12px;padding:12px}
+  .detail:empty{display:none}
+  .item{padding:5px 10px;background:#fff;border:1px solid #d8c9ff;border-radius:8px;font-weight:650}
+  .item.inactive{color:#665c79;background:#eee9f5}
+  .item.highlight{color:#4b3710;background:#ffe37d;border-color:#dfb632}
+  .columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .columns > div{background:white;border-radius:10px;padding:10px}
+  #visual{display:grid;gap:10px}
+  #visual svg{display:block;width:100%;height:auto;max-height:420px;background:#fbf9ff;border-radius:12px}
+  input[type=range]{width:100%;accent-color:#6b46dd}
+  ul{margin:0;padding-inline-start:1.3rem}
+  details{color:#544977}
+  summary{cursor:pointer;font-weight:650}
+  @media(max-width:360px){.columns{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main id="content">
+  <p id="waiting">학습 결과를 기다리고 있어요.</p>
+  <header class="card" hidden>
+    <p class="eyebrow">AHA! · 나만의 실습</p>
+    <h1 id="lesson-title"></h1>
+    <p id="objective"></p>
+    <p id="explanation"></p>
+  </header>
+  <section class="card" id="practice" hidden>
+    <h2>직접 탐색하기</h2>
+    <p id="activity"></p>
+    <div id="visual"></div>
+  </section>
+  <section class="card" id="quiz" hidden>
+    <h2>확인 문제</h2>
+    <p id="quiz-question"></p>
+    <div class="choices" id="quiz-options" role="group" aria-labelledby="quiz-question"></div>
+    <p class="feedback" id="quiz-result" aria-live="polite" hidden></p>
+  </section>
+  <details class="card" id="sources" hidden>
+    <summary>자료 인용 및 참고 사항</summary>
+    <ul id="source-list"></ul>
+  </details>
+</main>
+<script>__INTERACTIVE_SCRIPT__</script>
+</body>
+</html>

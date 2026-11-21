@@ -18,11 +18,13 @@ MAX_RESPONSE_BYTES = 96 * 1024
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
-def response_schema(source: dict | None = None) -> dict:
+def response_schema(source: dict | None = None, *, include_bounds: bool = True) -> dict:
     """Use the documented schema subset; enforce all omitted constraints locally."""
     source = source if source is not None else LessonSpec.model_json_schema()
     definitions = source.get("$defs", {})
-    allowed = {"type", "description", "enum", "minimum", "maximum", "required", "additionalProperties", "minItems", "maxItems"}
+    allowed = {"type", "description", "enum", "required", "additionalProperties"}
+    if include_bounds:
+        allowed |= {"minimum", "maximum", "minItems", "maxItems"}
 
     def convert(node):
         if "$ref" in node:
@@ -80,7 +82,11 @@ def http_error(status: int, envelope: dict, headers: httpx.Headers) -> LearningE
     if status == 503:
         message = str(error.get("message", "")).lower()
         if "high demand" in message or "overloaded" in message:
-            return LearningError("gemini_overloaded", "Gemini가 요청 폭주로 일시적인 서비스 부하(HTTP 503)를 응답했어요. 무료 한도 초과(429)와 다른 오류예요. 기본 예제를 열거나 나중에 다시 시도해 주세요.", 503)
+            return LearningError(
+                "gemini_overloaded",
+                "Gemini가 일시적인 서비스 부하(HTTP 503)를 응답했어요. 잠시 뒤 같은 질문을 제출하거나 기본 예제를 열어 주세요.",
+                503, retry_after=retry_seconds(headers, envelope),
+            )
     return LearningError("gemini_unavailable", "Gemini 서비스가 요청을 처리하지 못했어요. 기본 예제를 열거나 나중에 다시 시도해 주세요.", 503)
 
 

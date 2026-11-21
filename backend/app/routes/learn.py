@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..config import ConfigurationError, Settings, get_settings
 from ..services.errors import LearningError
+from ..services.interactive import create_interactive
 from ..services.lessons import build_sample_video, create_learning
 from ..services.uploads import FILE_TYPES, MAX_FILE_BYTES, has_signature, read_upload
 import math
@@ -43,11 +44,13 @@ async def learn(request: Request, settings: Settings = Depends(get_settings)):
                 raise HTTPException(422, f"{name} 입력은 {limit}자 이하로 입력해 주세요.")
         if not fields["concept"] and not fields["question"]:
             raise HTTPException(422, "어려운 개념 또는 질문을 입력해 주세요.")
-        if fields["format"] not in {"html", "shorts"}:
-            raise HTTPException(422, "학습 방식을 선택해 주세요: html 또는 shorts.")
-        if settings.mode == "gemini" and fields["format"] == "html" and form.get("consent") != "true":
+        if fields["format"] not in {"html", "interactive", "shorts"}:
+            raise HTTPException(422, "학습 방식을 선택해 주세요.")
+        if settings.mode == "gemini" and fields["format"] in {"html", "interactive"} and form.get("consent") != "true":
             raise LearningError("consent_required", "Gemini 전송 안내를 확인해 주세요. 질문과 PDF 추출 텍스트가 Google Gemini에 전송될 수 있어요. 무료 티어에는 개인정보·민감정보를 보내지 마세요.", 428, False)
         material, data = await read_upload(form.get("file"))
+        if fields["format"] == "interactive":
+            return await create_interactive(settings, fields["concept"], fields["question"], material, data)
         if fields["format"] == "shorts":
             # Preserve the legacy sample response. New generation uses /api/videos.
             return build_sample_video(fields["concept"], fields["question"], material)

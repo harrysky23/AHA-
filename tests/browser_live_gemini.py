@@ -20,10 +20,10 @@ def run():
         page=browser.new_page(viewport={'width':1440,'height':1000},reduced_motion='reduce')
         page.goto(BASE)
         expect(page.locator('#generation-mode')).to_contain_text('Gemini AI')
-        page.locator('#concept').fill('미분계수의 기하학적 의미')
-        page.locator('#question').fill('음수 h에서 왼쪽으로 접근해도 할선의 기울기가 2에 가까워지는 이유를 자료의 식과 연결해 설명해 주세요.')
-        page.locator('#material').set_input_files({'name':'synthetic-calculus.pdf','mimeType':'application/pdf',
-            'buffer':pdf_bytes('For f(x)=x squared at x=1, the secant slope is 2+h for nonzero h. The tangent slope is 2.')})
+        page.locator('#concept').fill('등속 운동에서 시간과 이동 거리')
+        page.locator('#question').fill('시간을 두 배로 늘리면 왜 이동 거리가 두 배가 되나요? 자료를 인용하고 그래프의 시간 값을 바꾸며 실습할 수 있게 설명해 주세요.')
+        page.locator('#material').set_input_files({'name':'synthetic-motion.pdf','mimeType':'application/pdf',
+            'buffer':pdf_bytes('At a constant speed of 2 meters per second, distance equals 2 times the elapsed time.')})
         page.locator('#external-consent').check()
         with page.expect_response(lambda r:r.url.endswith('/api/learn'),timeout=110000) as response_info:
             page.locator('#generate').click()
@@ -32,18 +32,20 @@ def run():
         if response.status!=200:
             print('Actual FastAPI request failed:',response.status,data.get('code'),data.get('detail'))
             browser.close();return 1
-        assert data['mode']=='gemini' and data['verification']['numeric_checks']=='passed'
-        assert data['lesson']['spec']['source_quotes']
+        assert data['mode']=='gemini' and data['generation']['status']=='validated'
+        assert data['lesson']['viewer_url']=='/lessons/interactive'
+        spec=data['lesson']['spec']
+        assert spec['source_quotes']
+        assert spec['visualization']['type']=='function_graph'
         frame=page.frame_locator('#lesson-view iframe')
-        expect(frame.locator('#dynamic-lesson')).to_be_visible()
-        expect(frame.locator('#lesson-explanation')).to_have_text(data['lesson']['spec']['explanation'])
-        frame.locator('[data-h="-0.1"]').click()
-        expect(frame.locator('#secant-value')).to_have_text('1.9000')
-        frame.locator('[data-h="0.0001"]').click()
-        expect(frame.locator('#secant-value')).to_have_text('2.0001')
-        frame.locator('[data-h="0"]').click()
-        expect(frame.locator('#secant-value')).to_have_text('정의 안 됨')
-        frame.locator('#graph').scroll_into_view_if_needed()
+        expect(frame.locator('#practice')).to_be_visible()
+        expect(frame.locator('#explanation')).to_have_text(spec['explanation'])
+        before=frame.locator('#visual .detail').inner_text()
+        frame.locator('#graph-control').fill('150')
+        assert frame.locator('#visual .detail').inner_text()!=before
+        frame.locator('#quiz-options button').nth(spec['quiz']['correct_index']).click()
+        expect(frame.locator('#quiz-result')).to_contain_text('정답이에요')
+        frame.locator('#visual').scroll_into_view_if_needed()
         page.screenshot(path=str(OUT/'gemini-live-graph.png'))
         page.locator('#edit-input').click()
         with page.expect_response(lambda r:r.url.endswith('/api/learn'),timeout=110000) as cached_response_info:
@@ -58,9 +60,9 @@ def run():
             'provider':data['mode'],'model':data['generation']['model'],
             'new_api_calls':0 if data['generation']['cached'] else 1,
             'cache_reuse_confirmed':True,'pdf_text_extracted':data['grounding']['extracted_characters'],
-            'source_quotes_checked':data['verification']['source_quotes'],
-            'numeric_checks':data['verification']['numeric_checks'],
-            'graph_positive_negative_zero_checked':True,
+            'source_quotes_checked':len(spec['source_quotes']),
+            'graph_slider_changed':True,
+            'quiz_feedback_checked':True,
             'request_ids':[data['generation']['request_id'],cached['generation']['request_id']],
             'explanation_sha256':hashlib.sha256(data['lesson']['spec']['explanation'].encode()).hexdigest()}
         (ROOT/'tmp/gemini-live-ui.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2))

@@ -177,7 +177,7 @@ MediaPlan·자산은 worker 임시 폴더로 복사해 기존 시간/디스크/�
 
 기존 랜딩·수학·사회 데모를 유지하고 FastAPI에 **자료 업로드 → 질문 → 학습 방식 → JSON 학습 명세 → 인터랙티브 학습**을 연결했습니다.
 
-HTML 학습의 지원 개념은 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수**입니다. Phase 3-A의 범용 스토리보드와 Phase 3-B의 **HTML/SVG → Playwright → 로컬 한국어 TTS → FFmpeg MP4**를 Phase 3-C에서 웹에 연결했습니다. 이제 **자료·질문 → 숏츠 학습 → 생성 상태 → 실제 MP4 재생·다운로드**가 작동합니다. AI 코드는 실행하지 않습니다.
+웹의 인터랙티브 학습은 Gemini 모드에서 입력한 주제별 실습을 생성합니다. mock 모드에서는 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수** 예제를 엽니다. Phase 3-C의 숏츠는 별도 경로로 동작하며 자료와 질문을 바탕으로 MP4 생성 상태, 재생, 다운로드를 제공합니다.
 
 ## Phase 3-C · 웹에서 숏츠 만들기
 
@@ -383,9 +383,9 @@ python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765
 
 1. **내 자료로 시작하기**를 누릅니다.
 2. 선택적으로 5 MiB 이하의 텍스트 PDF를 올립니다.
-3. 미분계수 개념과 질문을 입력하고 인터랙티브 학습을 선택합니다.
+3. 원하는 개념이나 질문을 입력하고 **인터랙티브 학습**을 선택합니다. 예를 들어 “빛을 흡수한 뒤 광합성에서 어떤 일이 일어나나요?”를 입력할 수 있습니다.
 4. Gemini 모드에서는 전송 안내를 확인합니다.
-5. 설명·그래프·예제·확인 문제를 학습합니다. 같은 입력을 다시 제출하면 캐시를 재사용합니다.
+5. 만들어진 설명을 읽고 그래프 슬라이더, 단계·사건 탐색, 비교 기준 선택 등 주제에 맞는 실습과 확인 문제를 풉니다. 시각화로 표현하기 어려운 개념은 설명 카드와 확인 문제를 엽니다. 같은 입력을 다시 제출하면 캐시를 재사용합니다.
 6. 실패하면 오류를 확인하고 **기본 수학 예제 바로 열기**로 전환합니다.
 
 Gemini가 실패해도 기존 수학·사회 데모·기존 영상은 이용할 수 있습니다. 서버 프로세스 자체가 중단되면 정적 뷰어도 열리지 않습니다.
@@ -473,13 +473,11 @@ Gemini에는 문서화된 JSON Schema 부분집합만 전달하고 길이·h 간
 
 ## JSON·수학·실행 검증
 
-학습 명세는 개념 설명, 질문에서 추정한 수준·선행 개념, 단계, 시각화 유형·변수, 예제, 확인 문제, 자료 인용·가정을 포함합니다.
+범용 학습 명세에는 학습 목표, 설명, 실습 안내, 시각화, 확인 문제, 자료 인용과 참고 사항이 들어갑니다. Gemini는 질문에 맞춰 다항식 그래프, 과정, 타임라인, 비교, 상태 변화, 설명 카드 중 하나를 선택합니다. Gemini에 보내는 스키마는 구조와 필드 타입을 지정하고, 배열 길이와 숫자 범위는 서버 검증에서 적용합니다. 그래프는 3차 이하의 계수와 좌표로 정의하며, 브라우저에서 슬라이더에 따른 값을 계산합니다. 인용은 제공된 페이지의 추출 문자열과 비교합니다. 자연어 설명과 확인 문제의 정확성은 자료와 함께 검토해야 합니다.
 
-허용 시각화는 `secant_tangent_x2` 하나입니다. 함수·기준점·범위는 고정하고 모델은 h 초기값을 선택합니다. h는 −1.2부터 1.2까지 0.0001 간격이며, 예제·문제의 값도 같은 간격으로 제한합니다.
+기존 미분계수 전용 명세의 `secant_tangent_x2`는 기존 API와 고정 예제에서 계속 사용할 수 있습니다. 함수·기준점·범위는 고정되며 h≠0의 할선 기울기 2+h, 접선 기울기 2, h=0 미정의를 코드로 검증합니다.
 
-h≠0의 할선 기울기 2+h, 접선 기울기 2, h=0 미정의를 코드로 검증합니다. 확인 문제 문장과 채점도 수치로 구성합니다. 인용은 제공된 페이지의 추출 문자열과 비교합니다. 자연어 설명 전체의 정확성이나 인용의 의미적 관련성을 완전히 검증하지는 않습니다.
-
-임의 실행 코드·다른 함수·추가 JSON 필드는 거절합니다. 고정 스크립트 해시 CSP와 `sandbox="allow-scripts"` iframe을 사용하고 `allow-same-origin`은 주지 않습니다. 검증된 JSON만 전달해 `textContent`로 표시하며 메인 DOM에 AI HTML을 넣지 않습니다. iframe/CSP만으로 완전한 보안을 보장하지 않습니다.
+뷰어는 고정 스크립트 해시 CSP와 `sandbox="allow-scripts"` iframe을 사용합니다. 검증된 JSON을 전달하고, 모델이 반환한 문자열은 `textContent`로 표시합니다.
 
 ## 오류와 API
 
@@ -492,18 +490,18 @@ h≠0의 할선 기울기 2+h, 접선 기울기 2, h=0 미정의를 코드로 �
 | 서비스 부하 / HTTP 503 | `gemini_overloaded` 또는 `gemini_unavailable`, 기본 예제·나중에 재시도 |
 | 시간 초과 | `gemini_timeout` |
 | 출력 잘림·차단·형식 | `gemini_output_truncated`, `gemini_blocked`, `gemini_invalid_response` |
-| 수학·인용·스키마 | `invalid_lesson_spec` |
+| 수학·인용·스키마 | `invalid_interactive_spec` 또는 기존 `invalid_lesson_spec` |
 | Elice 선택 | `elice_not_implemented`, 네트워크 호출 없음 |
 
 `GET /api/health`는 모드·설정 형식 확인·캐시 여부·제한 시간을 반환합니다. `ai_configured=true`는 실제 인증·생성 성공을 뜻하지 않습니다.
 
-`POST /api/learn`은 multipart이며 `concept`(200자), `question`(2,000자), `format=html|shorts`, 선택적 `file`, Gemini의 `consent=true`를 받습니다. 개념·질문 중 하나가 필수입니다. 전송 확인은 캐시 조회 전에도 요구합니다.
+`POST /api/learn`은 multipart이며 `concept`(200자), `question`(2,000자), `format=interactive|html|shorts`, 선택적 `file`, Gemini의 `consent=true`를 받습니다. 개념·질문 중 하나가 필수입니다. `interactive`는 Gemini 기반 범용 실습, `html`은 기존 미분계수 학습 명세, `shorts`는 기존 영상 예시입니다. 전송 확인은 캐시 조회 전에도 요구합니다.
 
 ```bash
 curl http://127.0.0.1:8765/api/health
 curl -X POST http://127.0.0.1:8765/api/learn \
-  -F 'question=h=0을 대입하면 왜 안 되나요?' \
-  -F 'format=html' -F 'consent=true'
+  -F 'question=광합성에서 빛 에너지는 어떻게 쓰이나요?' \
+  -F 'format=interactive' -F 'consent=true'
 ```
 
 응답은 `mode`, 입력, 자료 처리 상태, `generation`(Provider·모델·요청 ID·캐시·토큰), `verification`, `lesson.spec` 또는 기존 영상입니다. 앱 로그에는 요청 ID·모드·상태·오류 코드만 기록합니다. 일반 오류 응답에는 Google이 반사할 수 있는 원문을 포함하지 않습니다.
@@ -512,14 +510,14 @@ curl -X POST http://127.0.0.1:8765/api/learn \
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m pytest tests/test_api.py tests/test_phase2.py tests/test_providers_cache.py -q
+python -m pytest tests/test_api.py tests/test_phase2.py tests/test_interactive.py tests/test_providers_cache.py -q
 python -m pytest tests/test_storyboard.py -q
 # 기존+신규 전체 검사:
 python -m pytest -q
 node --check frontend/static/workflow.js
 ```
 
-일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 현재 전체294개가 통과했습니다(기존206 + ChatKHU45 + 멀티모달28 + Remotion15). 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경과 렌더링·작업 정책을 확인합니다. 일부 프로세스 제어 테스트는 무해한 실제 대역 프로세스를 생성·종료합니다. ChatKHU 검사는 합성 PNG/PCM 파일의 로컬 디코딩만 수행하며 실제 모델·Chrome·TTS 합성·MP4 생성은 실행하지 않습니다.
+일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 기존 데모, 주제별 실습 명세, 키 비노출, PDF 인용, Gemini 요청·실패, 검증·캐시와 렌더링·작업 정책을 확인합니다. 일부 프로세스 제어 테스트는 무해한 실제 대역 프로세스를 생성·종료합니다. ChatKHU 검사는 합성 PNG/PCM 파일의 로컬 디코딩을 수행합니다.
 
 Phase 3-A의155개에 Phase 3-B의 렌더링 정책·음성 길이·시간/디스크 제한·실패 정리·키 상속 방지 검사를 추가했습니다. 실제 브라우저·TTS·MP4 검증은 위 명시적 명령으로 분리하며 일반 pytest에서 실행하지 않습니다.
 

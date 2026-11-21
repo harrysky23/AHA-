@@ -108,7 +108,17 @@ async def index():
 
 @app.get("/lessons/secant-tangent", response_class=HTMLResponse, include_in_schema=False)
 async def lesson():
-    html = (FRONTEND / "lessons" / "secant-tangent.html").read_text()
+    return lesson_response((FRONTEND / "lessons" / "secant-tangent.html").read_text(encoding="utf-8"))
+
+
+@app.get("/lessons/interactive", response_class=HTMLResponse, include_in_schema=False)
+async def interactive_lesson():
+    directory = FRONTEND / "lessons"
+    html = (directory / "interactive.html").read_text(encoding="utf-8")
+    return lesson_response(html.replace("__INTERACTIVE_SCRIPT__", (directory / "interactive.js").read_text(encoding="utf-8")))
+
+
+def lesson_response(html: str) -> HTMLResponse:
     scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
     hashes = " ".join("'sha256-" + base64.b64encode(hashlib.sha256(s.encode()).digest()).decode() + "'" for s in scripts)
     return HTMLResponse(html, headers={
