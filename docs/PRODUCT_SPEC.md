@@ -23,7 +23,8 @@ Turn the student's study material and difficult concept into a personalized, vis
 
 ## Output B: independent learning short (slides 6, 9, 11)
 - Phase 3-A implements only the independent storyboard JSON stage: generic concepts, a 30–60 second/9:16 scene specification and six allowlisted visualization types. It uses a separate schema, prompt and cache from the Math II HTML path.
-- No MP4 rendering, TTS, FFmpeg execution or video storage is implemented in Phase 3-A. `/api/learn` shorts still provides the existing sample video; `/api/storyboard` returns JSON only.
+- Phase 3-B adds a local synchronous renderer: vetted HTML/SVG components -> Playwright frames -> macOS Korean speech -> FFmpeg H.264/AAC MP4. Six visualization types, deterministic timeline, bounded worker execution and text fallback are implemented separately from the HTML lesson.
+- `/api/learn` shorts still provides the existing sample video; `/api/storyboard` returns JSON only. Rendering jobs/progress/download UI remain Phase 3-C work. Local CLI output is not a public video storage service.
 - 9:16 vertical video, target 30–60 seconds.
 - Pipeline: AI script/storyboard -> programmatic animation -> TTS -> FFmpeg encode/export.
 - NOT a recording of the interactive HTML screen.

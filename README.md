@@ -1,8 +1,66 @@
-# AHA! (아하!) · Phase 2 + Phase 3-A
+# AHA! (아하!) · Phase 3-B
 
 기존 랜딩·수학·사회 데모를 유지하고 FastAPI에 **자료 업로드 → 질문 → 학습 방식 → JSON 학습 명세 → 인터랙티브 학습**을 연결했습니다.
 
-HTML 학습의 지원 개념은 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수**입니다. AI는 설명·수준·예제·확인 문제를 JSON으로 만들고, 검증된 로컬 HTML/JS 컴포넌트가 그래프를 계산합니다. Phase 3-A는 별도의 범용 영상 스토리보드 JSON을 추가합니다. AI 코드 실행·MP4 렌더링·TTS·FFmpeg·영상 저장은 구현하지 않았습니다.
+HTML 학습의 지원 개념은 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수**입니다. AI는 설명·수준·예제·확인 문제를 JSON으로 만들고, 검증된 로컬 HTML/JS 컴포넌트가 그래프를 계산합니다. Phase 3-A는 별도의 범용 영상 스토리보드 JSON을, Phase 3-B는 **HTML/SVG → Playwright → 로컬 한국어 TTS → FFmpeg MP4** 엔진을 추가합니다. AI 코드는 실행하지 않으며 영상 생성 작업 UI·진행률 API는 Phase 3-C 범위입니다.
+
+## Phase 3-B · 로컬 학습 영상 렌더링
+
+macOS의 로컬 `Yuna` 음성, Chrome 또는 Playwright Chromium, FFmpeg/ffprobe가 필요합니다. 영상·TTS 유료 API를 호출하지 않으며 렌더링 스크립트는 `.env`를 읽지 않습니다.
+
+```bash
+source .venv/bin/activate
+python -m pip install -r requirements-render.txt
+brew install ffmpeg
+# 설치된 macOS Google Chrome을 자동 선택합니다. 없으면:
+python -m playwright install chromium
+# 한국어 음성 확인. 설치된 Yuna가 없으면 macOS 음성 설정에서 준비하세요.
+say -v '?' | rg 'Yuna|ko_KR'
+
+# 개발용: 실제 외부 AI 호출 없이 예제4개, 각각45초 MP4
+python scripts/render_storyboard.py --all-mocks --preview --fps 3 --output tmp/videos/my-run
+
+# 기본 출력: 1080×1920, 30fps, H.264 + AAC
+python scripts/render_storyboard.py --mock math --output tmp/videos/math-full.mp4
+
+# /api/storyboard 응답 전체 또는 응답의 storyboard 객체를 파일로 저장한 뒤:
+python scripts/render_storyboard.py --input tmp/storyboard.json --preview --fps 6 --output tmp/videos/custom.mp4
+```
+
+입력 파일은 최대128KiB이며 `StoryboardSpec`을 다시 검증합니다. 예제는 math/science/social/cs이고 `--duration 30..60`은 mock 길이만 설정합니다. 실제 Gemini 스토리보드를 원하면 앞 단계의 명시적 생성 절차를 거친 JSON을 사용하세요. 렌더러는 생성 API를 대신 호출하지 않습니다.
+
+출력 옆의 `*.render.json`에 코덱·길이·해상도·오디오 트랙, 장면별 발화 길이와 속도 조정, 대체 장면과 원인, 파일 해시를 기록합니다. 실패는 `code/message/scene_id` JSON을 stderr로 반환하며 원문 질문·내레이션·API 키·도구 stderr는 로그로 내보내지 않습니다. 기존 출력은 덮어쓰지 않습니다. `tmp/`의 영상·기록·프레임은 Git에서 제외합니다. 사용자가 별도 출력 경로를 지정할 때도 생성 파일을 직접 커밋하지 마세요.
+
+| 정책 | 구현 |
+| --- | --- |
+| 시각화 | DSL 6종. 다항식 계수·노드·타임라인·비교·명시적 상태·텍스트만 해석 |
+| 대체 | 겹치는 노드·밀집 타임라인·과도한 글자 등은 `text_explanation`으로 바꾸고 장면 ID/원인을 기록. 미지 타입·코드 필드는 입력 검증에서 거절 |
+| 모션 | 명시적 시점으로 계산하는 페이드·이동·확대·강조, 고정 장면 경계. 실제 시간·랜덤·CSS 애니메이션에 의존하지 않음 |
+| 텍스트 | 제목/그림/주석/자막 영역 분리, 한국어 줄바꿈·축소·분할 표시. `textContent`만 사용하며 수식도 평문 |
+| TTS | macOS `say` Yuna,185wpm. 교체 가능한 `TTSEngine` 인터페이스. 실패하면 무음 영상으로 숨기지 않고 오류 |
+| 음성 길이 | 짧으면 장면 끝까지 무음, 길면 최대1.35배 `atempo`. 더 길면 `narration_too_long` + 장면 ID. 발화를 자르거나 장면 시간을 변경하지 않음 |
+| 자막 | 문장을 분할해 장면 시간에 비례 표시. 음소/단어별 강제 정렬은 미구현 |
+| 영상 | 기본1080×1920/30fps, `--preview` 540×960, `--fps 1..30`. H.264/yuv420p + AAC48kHz mono, faststart |
+| 프리뷰 비용 | 재현성을 위해 캡처는1080×1920으로 고정하고 FFmpeg에서 축소. 개발 비용은 우선 낮은 FPS로 줄임 |
+| 제한 | 사용자별 로컬 파일 잠금으로 동시1개, 기본600초(최대1800초), 임시 파일 합계512MiB(옵션으로최대2GiB), 여유 공간256MiB 이상 |
+| 정리 | 별도 worker와 자식 프로세스 그룹 종료, 임시 디렉터리 자동 정리, 성공 검증 후에만 MP4 공개. 파일당 OS 용량 제한과 부모의100ms 용량 감시 병행 |
+| 격리 | 새 비영구 브라우저 프로필, offline·모든 요청 차단·WebSocket 차단·service worker 금지·CSP. 도구에 API 키를 상속하지 않고 shell=False로 실행 |
+
+렌더링은 장면의 폰트·템플릿·브라우저 환경을 고정한 로컬 작업입니다. macOS에서는 네트워크 없이 시스템 `Apple SD Gothic Neo`를 사용하고 AHA!의 보라·노랑·분홍 팔레트를 재사용합니다. 원본 Google Fonts를 원격으로 받지 않습니다. 브라우저/OS/설치 폰트가 달라도 동일 파일 해시를 보장하는 것은 아니며, 브라우저 설정만으로 OS 보안 격리를 완성했다고 주장하지 않습니다.
+
+원문 자료와 인용의 의미·전체 사실성은 렌더링 검증 대상이 아닙니다. PDF 인용 일치는 Phase 3-A 생성 서비스에서 확인하며 렌더러는 DSL·시간·참조를 검사합니다. 공개 서비스의 사용자별 작업 격리·저장 정책·취소·진행률·다운로드 UI는 Phase 3-C 이후에 추가해야 합니다. 기존 `/api/learn`과 `/api/storyboard`는 그대로이며, 스토리보드 API의 `rendering.status=not_implemented`는 **그 API에서 렌더링을 실행하지 않는다**는 기존 응답을 유지한 것입니다.
+
+```bash
+python -m pytest -q                  # mock/HTTP 대역; AI·영상 생성 없음
+python tests/browser_rendering.py    # 6종 실제 프레임, 재현성·대체·네트워크·긴 문장
+python tests/browser_rendered_videos.py tmp/videos/my-run # 생성된 예제 MP4의 Chrome 로드·탐색·재생
+# 실제 생성 명령을 실행한 뒤 수동 확인도 가능:
+ffprobe -v error -show_streams -show_format -of json tmp/videos/my-run/math.mp4
+ffmpeg -nostdin -v error -xerror -i tmp/videos/my-run/math.mp4 -f null -
+ffmpeg -nostdin -v error -ss 5 -i tmp/videos/my-run/math.mp4 -frames:v 1 tmp/math-frame.png
+```
+
+렌더링 엔진은 모든 결과에 대해 ffprobe 형식 검사와 **전체 영상·오디오 디코딩**을 수행합니다. 개발 기록과 실제 예제 위치는 [Phase 3-B 기록](docs/PHASE3B_NOTES.md)을 참조하세요.
 
 ## 현재 Provider
 
@@ -18,7 +76,7 @@ HTML 학습의 지원 개념은 수학 II의 **f(x)=x², a=1에서 할선→접�
 
 `POST /api/storyboard`를 추가했습니다. 기존 `/api/learn`의 HTML·기존 영상 응답과 프론트엔드는 유지합니다. 새 API는 `StoryboardSpec(schema_version=storyboard-1)`을 반환하며 `LessonSpec`과 분리되어 있습니다. 이번 단계는 스토리보드만 만들며, 영상이나 음성 생성 완료로 표시하지 않습니다.
 
-지원 시각화는 function_graph / process_diagram / timeline / comparison / state_transition / text_explanation입니다. 함수는 최대3차 계수·좌표만 받고 임의 수식 코드는 실행하지 않습니다. 그림은 제한된 노드·연결·좌표·동작 데이터만 받습니다. [DSL과 미래 렌더러 계약](docs/STORYBOARD_DSL.md)에 각 파라미터·상한·시간 해석을 정리했습니다.
+지원 시각화는 function_graph / process_diagram / timeline / comparison / state_transition / text_explanation입니다. 함수는 최대3차 계수·좌표만 받고 임의 수식 코드는 실행하지 않습니다. 그림은 제한된 노드·연결·좌표·동작 데이터만 받습니다. [DSL과 렌더러 계약](docs/STORYBOARD_DSL.md)에 각 파라미터·상한·시간 해석을 정리했습니다.
 
 장면은 총30–60초, 9:16(1080×1920,30fps)이며 3–8개 장면을0초부터 연속 배치합니다. 겹침·공백·길이 초과·잘못된 참조·위조 인용·코드 필드는 검증 오류입니다. 한국어 내레이션은 텍스트만 작성하며 실제 발화 길이는 측정하지 않습니다. 근거가 모자라면 text_explanation과 부족한 맥락을 반환할 수 있습니다.
 
@@ -217,9 +275,9 @@ python -m pytest -q
 node --check frontend/static/workflow.js
 ```
 
-일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경을 확인합니다.
+일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 현재 전체183개가 통과했습니다. 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경과 렌더링 정책을 확인합니다.
 
-Phase 3-A 추가 후 전체 **155개**가 통과했습니다. 신규 검사는4개 개념,6종 시각화,30/45/60초, 시간·좌표·참조·인용·코드 거절과 기존 API 응답 유지를 포함합니다.
+Phase 3-A의155개에 Phase 3-B의 렌더링 정책·음성 길이·시간/디스크 제한·실패 정리·키 상속 방지 검사를 추가했습니다. 실제 브라우저·TTS·MP4 검증은 위 명시적 명령으로 분리하며 일반 pytest에서 실행하지 않습니다.
 
 브라우저 검증은 mock 서버를 실행해 진행합니다.
 
@@ -255,6 +313,8 @@ backend/app/
     elice.py                네트워크 없는 준비 구현체
   schemas.py                학습 명세·수학·인용 검증
   storyboard_schema.py     별도 범용 영상 DSL·시간·참조 검증
+  rendering/               검증된 HTML/SVG 프레임·로컬 TTS·FFmpeg·제한/worker
+    assets/                소유한 scene.html/css/js; 모델 코드를 받지 않음
   services/
     lessons.py              PDF → Provider → 검증 → 캐시 → 응답
     prompts.py              버전이 있는 프롬프트
@@ -268,6 +328,7 @@ frontend/                   기존 랜딩·폼·격리된 그래프
 scripts/prepare_frontend.py  원본 + 폼으로 실행 HTML 재구성
 scripts/check_gemini.py      명시적 실제 호출 검증
 scripts/check_storyboard.py  기본 mock / 명시적 --live 스토리보드 검증
+scripts/render_storyboard.py 로컬 JSON/mock → 실제 MP4; 외부 API 호출 없음
 tests/                      회귀·Provider·캐시·브라우저 검증
 references/                 보존한 HTML·기획 PDF
 ```
