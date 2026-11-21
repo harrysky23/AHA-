@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>할선에서 접선으로 · 아하!</title>
+<style>
+:root{color-scheme:light;--ink:#2b2350;--muted:#6f6893;--violet:#7b5cf0;--lav:#e9e3ff;--bg:#fbfaff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;line-height:1.65;padding:24px}h1{font-size:1.4rem;margin:0 0 6px}p{margin:8px 0}.intro{color:var(--muted);font-size:.93rem}.graph-layout{display:grid;grid-template-columns:1.4fr 1fr;gap:24px;align-items:start;margin-top:20px}svg{display:block;width:100%;background:#f4f0ff;border-radius:18px}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin:12px 0}.legend span:before{content:"";display:inline-block;width:20px;height:3px;vertical-align:middle;margin-right:5px;background:var(--violet)}.legend .secant:before{background:#e0457c}.legend .tangent:before{background:#bc8200}label{display:block;font-weight:700}input[type=range]{width:100%;accent-color:var(--violet);margin:18px 0}button{border:1px solid #cfc3ff;background:#fff;color:#5a3fd6;border-radius:999px;padding:7px 12px;font:inherit;font-size:.82rem;cursor:pointer}button:hover{background:var(--lav)}:focus-visible{outline:3px solid var(--violet);outline-offset:3px}.presets{display:flex;gap:8px;flex-wrap:wrap}.readout{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:18px}.readout>div{background:var(--lav);border-radius:14px;padding:12px}.readout span{display:block;font-size:.73rem;color:var(--muted)}.readout b{font-size:1.2rem;font-variant-numeric:tabular-nums}.aha{margin-top:18px;padding:16px;background:var(--lav);border-radius:14px;font-weight:700}.aha.on{background:#ffd23f;color:#4a3600}.math-note{font-size:.85rem;color:var(--muted)}.steps{margin:22px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.steps li{padding:16px;background:white;border:1px solid #e3dcff;border-radius:16px;font-size:.88rem}.steps strong{display:block;color:#5a3fd6;margin-bottom:6px}.formula{background:#f3efff;padding:14px;border-radius:14px;overflow-wrap:anywhere}.point-note{font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums;min-height:45px}@media(max-width:760px){body{padding:16px}.graph-layout{grid-template-columns:1fr;gap:8px}.steps{grid-template-columns:1fr;gap:8px}.steps li{padding:12px}.readout b{font-size:1.05rem}h1{font-size:1.2rem}}
+</style>
+</head>
+<body>
+<h1>두 점 사이의 기울기에서, 한 점의 기울기로</h1>
+<p class="intro">f(x) = x² 위의 P(1, 1)은 고정하고 Q를 움직여 보세요. h는 두 점 사이의 x 변화량 Δx예요.</p>
+<div class="graph-layout">
+  <div><svg id="graph" viewBox="0 0 520 350" role="img" aria-label="y=x² 위의 두 점 P와 Q, 할선과 접선 그래프"></svg><div class="legend"><span>y = x²</span><span class="secant">할선 PQ</span><span class="tangent">접선 y = 2x − 1</span></div><p id="point-note" class="point-note"></p></div>
+  <div>
+    <label for="delta">Δx = h = <output id="h-value" for="delta">1.2000</output></label>
+    <input id="delta" type="range" min="-1.2" max="1.2" step="0.0001" value="1.2" aria-describedby="slider-note">
+    <div class="presets" aria-label="h 값 바로 선택"><button data-h="1.2">처음으로</button><button data-h="-0.1">−0.1</button><button data-h="0.1">0.1</button><button data-h="0.01">0.01</button><button data-h="0.0001">0.0001</button><button data-h="0">0은 어떨까?</button></div>
+    <p id="slider-note" class="math-note">양수와 음수 양쪽에서 h를 0에 가까이 해 보세요. 슬라이더에 초점을 두고 방향키로도 움직일 수 있어요.</p>
+    <div class="readout"><div><span>할선 기울기</span><b id="secant-value">3.2000</b></div><div><span>접선 기울기</span><b id="tangent-value">2.0000</b></div><div><span>기울기 차이</span><b id="gap-value">1.2000</b></div></div>
+    <div id="insight" class="aha" role="status" aria-live="polite"></div>
+  </div>
+</div>
+<div class="formula">h ≠ 0일 때, 할선 기울기 = ((1+h)² − 1) / h = (2h+h²) / h = <strong>2+h</strong><br>h → 0일 때, 2+h → <strong>2 = f′(1)</strong></div>
+<ol class="steps"><li><strong>01 · 두 점을 이어요</strong>P와 Q를 잇는 할선은 두 점 사이의 평균변화율을 나타내요.</li><li><strong>02 · Q를 가까이 옮겨요</strong>|h|가 작아질수록 할선과 접선의 기울기 차이 |h|도 작아져요.</li><li><strong>03 · 극한을 생각해요</strong>h=0을 대입해 나누는 게 아니에요. h≠0인 채로 가까워질 때의 극한이 미분계수 2예요.</li></ol>
+<script>
+(() => {
+  'use strict';
+  const svg = document.getElementById('graph');
+  const NS = 'http://www.w3.org/2000/svg';
+  const make = (tag, attrs = {}, parent = svg) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    parent.append(node); return node;
+  };
+  const X = x => 75 + 120*x, Y = y => 300 - 44*y;
+  for (let x = -.5; x <= 3.5; x += .5) make('line', {x1:X(x),y1:18,x2:X(x),y2:326,stroke:'#e3dcff'});
+  for (let y = 0; y <= 6; y++) make('line', {x1:15,y1:Y(y),x2:505,y2:Y(y),stroke:'#e3dcff'});
+  make('line', {x1:15,y1:Y(0),x2:505,y2:Y(0),stroke:'#9b8ad9','stroke-width':2});
+  make('line', {x1:X(0),y1:326,x2:X(0),y2:18,stroke:'#9b8ad9','stroke-width':2});
+  function text(x,y,value,color='#6f6893') { const n=make('text',{x,y,fill:color,'font-size':14});n.textContent=value;return n; }
+  for(let x=0;x<=3;x++) text(X(x)-4,Y(0)+22,String(x));
+  for(let y=1;y<=6;y++) text(X(0)-20,Y(y)+5,String(y));
+  text(496,290,'x'); text(85,24,'y'); text(X(2.4),Y(5.7),'y = x²','#7b5cf0');
+  let path = '';
+  for(let i=0;i<=150;i++){const x=-.5+i*.02;path+=(i?'L':'M')+X(x).toFixed(2)+' '+Y(x*x).toFixed(2);}
+  make('path',{d:path,fill:'none',stroke:'#7b5cf0','stroke-width':3.5});
+  const tangent=make('line',{stroke:'#bc8200','stroke-width':2.5,'stroke-dasharray':'7 6'});
+  const secant=make('line',{stroke:'#e0457c','stroke-width':3});
+  const dx=make('line',{stroke:'#8a80b8','stroke-dasharray':'3 3'});
+  const dy=make('line',{stroke:'#8a80b8','stroke-dasharray':'3 3'});
+  const q=make('circle',{r:7,fill:'#ffc7d6',stroke:'#e0457c','stroke-width':3});
+  make('circle',{cx:X(1),cy:Y(1),r:7,fill:'white',stroke:'#7b5cf0','stroke-width':3});
+  text(X(1)-22,Y(1)-12,'P','#5a3fd6');const qLabel=text(0,0,'Q','#c93368');
+  function line(node,x1,y1,x2,y2){for(const [k,v] of Object.entries({x1:X(x1),y1:Y(y1),x2:X(x2),y2:Y(y2)}))node.setAttribute(k,v);}
+  line(tangent,-.4,2*(-.4)-1,3.5,6);
+  const slider=document.getElementById('delta');
+  const get=id=>document.getElementById(id);
+  function draw() {
+    const h=Number(slider.value), zero=h===0, m=2+h, b=1+h;
+    get('h-value').textContent=h.toFixed(4);
+    slider.setAttribute('aria-valuetext', `h = ${h.toFixed(4)}, ${zero?'할선 기울기 정의 안 됨':'할선 기울기 '+m.toFixed(4)}`);
+    get('secant-value').textContent=zero?'정의 안 됨':m.toFixed(4);
+    get('gap-value').textContent=zero?'—':Math.abs(h).toFixed(4);
+    [secant,dx,dy,q,qLabel].forEach(node=>node.setAttribute('visibility',zero?'hidden':'visible'));
+    line(secant,-.4,1+m*(-1.4),3.5,1+m*2.5);
+    line(dx,1,1,b,1);line(dy,b,1,b,b*b);
+    q.setAttribute('cx',X(b));q.setAttribute('cy',Y(b*b));
+    qLabel.setAttribute('x',X(b)+12);qLabel.setAttribute('y',Y(b*b)-12);
+    get('point-note').textContent=zero?'P = Q = (1, 1) · 두 점이 같아 할선은 정의할 수 없어요. 접선만 표시합니다.':`P(1, 1) · Q(${b.toFixed(4)}, ${(b*b).toFixed(4)}) · Δy = ${(b*b-1).toFixed(4)}`;
+    get('insight').textContent=zero?'h=0이면 분모가 0이라 할선 기울기는 정의되지 않아요. 접선 기울기 2는 극한으로 구해요.':Math.abs(h)<=.05?'아하! 양쪽 어디서든 h → 0이면 할선의 기울기 2+h → 2예요.':'Q를 P에 가까이 옮겨 보세요. 분홍 할선이 노란 접선에 가까워져요.';
+    get('insight').classList.toggle('on',!zero&&Math.abs(h)<=.05);
+  }
+  slider.addEventListener('input',draw);
+  document.querySelectorAll('[data-h]').forEach(button=>button.addEventListener('click',()=>{slider.value=button.dataset.h;draw();}));
+  draw();
+  // Only a bounded layout measurement leaves this isolated document.
+  new ResizeObserver(() => {
+    requestAnimationFrame(() => parent.postMessage({
+      type:'aha:lesson-size', height:Math.ceil(document.body.getBoundingClientRect().height),
+    }, '*'));
+  }).observe(document.body);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# AHA! Product specification (PoC)
+
+## Problem and audience
+A teacher addresses many students with different prior knowledge and comprehension speeds. Individually tailored re-explanations are hard to provide at scale. Target: Korean high-school students (grades 1–3), particularly those struggling with abstract mathematics and science concepts. Students may not know how to articulate where they are stuck.
+
+## Core promise
+Turn the student's study material and difficult concept into a personalized, visual learning experience rather than another generic chat answer.
+
+## Primary user flow (pitch slide 7)
+1. Upload study materials (PDF or images) and/or enter a question.
+2. Select or type a difficult concept.
+3. Choose an output mode: interactive HTML explanation or short video.
+4. Generate and study the result. Enable follow-up questions and revisions as a future or stretch goal.
+
+## Output A: interactive HTML (slides 6, 8, 11)
+- Graphs, sliders and simulations that make concepts manipulable.
+- Primary demo: f(x)=x²; manipulate Δx to see the secant approach the tangent, and display mathematically correct slope values.
+- Formula for a=1: secant slope ((1+h)²-1)/h = 2+h (h≠0), tangent slope 2. Avoid division by zero.
+- Generate HTML/JS via Elice ML API only after verifying available documentation and credentials.
+- Run generated code in an isolated, constrained viewer; validate math and provide a review/quality checkpoint.
+
+## Output B: independent learning short (slides 6, 9, 11)
+- 9:16 vertical video, target 30–60 seconds.
+- Pipeline: AI script/storyboard -> programmatic animation -> TTS -> FFmpeg encode/export.
+- NOT a recording of the interactive HTML screen.
+- No assumption of a dedicated Elice video API. Consider local deterministic animations and optional TTS providers; expose costs and dependencies before adding them.
+
+## Visual design and existing prototype
+Use the supplied `아하! v3.html` as the authoritative visual baseline. Preserve existing math and supply-demand interactive demos and their embedded media where possible. Add functional input/output screens without disrupting the existing landing experience.
+
+## Scope and demo acceptance
+Pitch slide 12 limits the initial PoC to one Math II secant→tangent scenario, two independent output-path concepts, basic sandboxing/verification plan and judge feedback. Implement a reliable, demonstrable path before adding general-purpose concept generation.
+
+## Quality, safety and accuracy
+- File type/size checks, safe extraction, clear user errors, API timeout and fallback.
+- Math result checks for known scenarios; avoid claims that all arbitrary generated mathematics is verified.
+- Never send sensitive study materials to an API without informing the user and using appropriate safeguards.
+- Do not imply copyright review is automated unless implemented.
+
+## Pitch alignment
+- Slide 2: classroom differentiation problem.
+- Slide 5: students cannot describe where stuck and cannot find suitable explanations.
+- Slides 6–7: dual learning modes and four-step user flow.
+- Slide 8: secant-to-tangent interactive example.
+- Slide 9: independently generated shorts.
+- Slide 10: personalization/interaction versus chatbot and static videos.
+- Slide 11: two technical pipelines and quality gates.
+- Slide 12: initial PoC scope and future roadmap.
