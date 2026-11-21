@@ -61,6 +61,7 @@
     submit.textContent=shorts?'나만의 숏츠 만들기 →':'학습 결과 열기 →';
   }
   form.querySelectorAll('[name=format]').forEach(input => input.addEventListener('change', () => {
+    clearError();
     updateFormat();
   }));
   window.addEventListener('aha:video-active',updateFormat);
@@ -81,6 +82,7 @@
   function clearError() {
     $('request-error').hidden = true;
     $('fallback').hidden = true;
+    $('use-shorts').hidden = true;
   }
   function checkFile() {
     const file = fileInput.files[0];
@@ -100,7 +102,7 @@
   $('remove-file').addEventListener('click', () => { fileInput.value = ''; checkFile(); clearError(); });
   $('sample-input').addEventListener('click', () => {
     $('concept').value = '미분계수의 기하학적 의미';
-    $('question').value = 'f(x)=x²에서 두 점을 잇는 할선의 기울기가 왜 접선의 기울기 2에 가까워지나요?';
+    $('question').value = 'f(x)=x²의 점 P(1,1)에서 할선의 기울기는 왜 접선의 기울기 2에 가까워지나요?';
     $('concept').focus(); clearError();
   });
   function appendSummary(label, value) {
@@ -161,6 +163,14 @@
     });
   }
   $('fallback').addEventListener('click', fallback);
+  $('use-shorts').addEventListener('click', () => {
+    form.elements.format.value = 'shorts';
+    clearError();
+    updateFormat();
+    $('request-status').textContent = '질문과 자료를 유지했어요. 전송 안내를 확인한 뒤 숏츠를 생성할 수 있어요.';
+    if (consentProvider) $('external-consent').focus();
+    else submit.focus();
+  });
   window.addEventListener('aha:sample-video',()=>render({mode:'local_demo',format:'shorts',title:'미분계수 · 기존 예시 영상',
     request:{concept:$('concept').value.trim(),question:$('question').value.trim()},material:null,
     notice:'기존 시안에 포함된 예시 영상이에요. 새로 생성한 결과가 아니에요.',grounding:{message:'입력한 질문과 자료는 이 예시 영상에 사용하지 않아요.'},
@@ -211,6 +221,12 @@
       const data = await response.json();
       if (!response.ok) {
         if (data.code === 'consent_required') updateMode('gemini');
+        if (data.code === 'unsupported_scope') {
+          showError('인터랙티브 학습은 f(x)=x²의 점 P(1,1)에서 할선과 접선을 다뤄요. 같은 질문을 숏츠로 옮기거나 기본 수학 예제를 열 수 있어요.', true);
+          $('use-shorts').hidden = false;
+          $('request-status').textContent = '이 질문에는 숏츠 학습을 선택할 수 있어요.';
+          return;
+        }
         showError(typeof data.detail === 'string' ? data.detail : '입력 내용을 확인해 주세요.', data.fallback_available === true || response.status >= 500);
         $('request-status').textContent = '결과를 열지 못했어요. 입력 확인 후 다시 시도해 주세요.';
         return;

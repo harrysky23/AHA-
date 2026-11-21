@@ -52,6 +52,7 @@ template strings, conditionals and local JSX. No loop statements, array construc
 async, browser or system globals, CSS animations, external resources, refs, handlers or packages.
 JSX tags: svg g defs path circle ellipse rect line polyline polygon text tspan linearGradient radialGradient
 stop clipPath marker title desc div span p. Use local SVG paint references such as url(#gradient).
+Local JSX components must be capitalized function declarations or const arrow functions with bodies in this module.
 Write every JSX attribute explicitly. JSX spread attributes are not supported.
 Include actual frame-dependent motion, recognizable shapes and truthful numerical examples where appropriate.
 Keep TSX under 7,000 characters by reusing simple shapes and helpers. Use concise labels, no comments.

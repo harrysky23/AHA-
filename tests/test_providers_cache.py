@@ -89,6 +89,7 @@ def test_errors_and_validation_failures_are_not_cached():
 
 def test_key_accounts_for_provider_model_prompt_schema_generation_and_private_input(monkeypatch):
     cache=LessonCache()
+    original_prompt_version = prompts.PROMPT_VERSION
     base=cache.key('gemini',S.model,S,REQUEST)
     keys={base,cache.key('mock',S.model,S,REQUEST),cache.key('gemini','gemini-different',S,REQUEST),
           cache.key('gemini',S.model,replace(S,api_key='other-key'),REQUEST),
@@ -98,7 +99,7 @@ def test_key_accounts_for_provider_model_prompt_schema_generation_and_private_in
     assert len(keys)==7 and all(len(key)==64 for key in keys)
     monkeypatch.setattr(prompts,'PROMPT_VERSION','changed')
     assert cache.key('gemini',S.model,S,REQUEST) not in keys
-    monkeypatch.setattr(prompts,'PROMPT_VERSION','secant-ko-v3')
+    monkeypatch.setattr(prompts,'PROMPT_VERSION',original_prompt_version)
     original=LessonSpec.model_json_schema
     monkeypatch.setattr(LessonSpec,'model_json_schema',classmethod(lambda cls:{**original(),'description':'schema revision'}))
     assert cache.key('gemini',S.model,S,REQUEST)!=base

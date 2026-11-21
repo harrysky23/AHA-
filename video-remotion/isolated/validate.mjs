@@ -38,6 +38,13 @@ export function validate(file) {
     throw new Error('TypeScript directives are forbidden');
   }
   const checker = program.getTypeChecker();
+  const localFunction = (name) => {
+    const declaration = checker.getSymbolAtLocation(name)?.valueDeclaration;
+    return declaration?.getSourceFile() === source && (
+      ts.isFunctionDeclaration(declaration) ||
+      (ts.isVariableDeclaration(declaration) && declaration.initializer && ts.isArrowFunction(declaration.initializer))
+    );
+  };
   const imported = new Set();
   for (const statement of source.statements) {
     if (ts.isFunctionDeclaration(statement) || ts.isVariableStatement(statement)) continue;
@@ -74,17 +81,17 @@ export function validate(file) {
     }
     if (ts.isVariableDeclarationList(node) && !(node.flags & ts.NodeFlags.Const)) stop(node, 'Use const bindings');
     if (ts.isJsxOpeningLikeElement(node) || ts.isJsxClosingElement(node)) {
-      if (!ts.isIdentifier(node.tagName) || !tags.has(node.tagName.text)) stop(node, 'Unsupported element');
+      const name = node.tagName;
+      // A capitalized tag must resolve to a function whose body we also check.
+      if (!ts.isIdentifier(name) || !(tags.has(name.text) ||
+          (/^[A-Z]/.test(name.text) && localFunction(name)))) stop(node, 'Unsupported element');
     }
     if (ts.isJsxAttribute(node) && /^(on|href|src|ref$|dangerously|form|contentEditable|xmlns)/i.test(node.name.getText(source))) stop(node, 'Unsupported JSX attribute');
     if (ts.isPropertyAssignment(node) && /^(animation|transition)/i.test(node.name.getText(source).replace(/['"]/g,''))) stop(node, 'CSS time-based motion is forbidden');
     if (ts.isCallExpression(node)) {
       const call = node.expression;
       if (ts.isIdentifier(call)) {
-        const declaration = checker.getSymbolAtLocation(call)?.valueDeclaration;
-        if (!imported.has(call.text) && !(declaration?.getSourceFile() === source
-            && (ts.isFunctionDeclaration(declaration) || ts.isVariableDeclaration(declaration) && declaration.initializer
-               && ts.isArrowFunction(declaration.initializer)))) stop(node, 'Unsupported function call');
+        if (!imported.has(call.text) && !localFunction(call)) stop(node, 'Unsupported function call');
       } else if (ts.isPropertyAccessExpression(call)) {
         const owner = call.expression.getText(source);
         const easing = owner === 'Easing' && imported.has(owner) && ['bezier','in','out','inOut','poly'].includes(call.name.text);
