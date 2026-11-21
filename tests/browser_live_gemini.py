@@ -58,7 +58,7 @@ def run():
         expect(page.locator('#result-mode')).to_contain_text('캐시 재사용')
         evidence={'timestamp_utc':datetime.now(timezone.utc).isoformat(),
             'provider':data['mode'],'model':data['generation']['model'],
-            'new_api_calls':0 if data['generation']['cached'] else 1,
+            'fresh_generation_confirmed':not data['generation']['cached'],
             'cache_reuse_confirmed':True,'pdf_text_extracted':data['grounding']['extracted_characters'],
             'source_quotes_checked':len(spec['source_quotes']),
             'graph_slider_changed':True,
@@ -68,10 +68,10 @@ def run():
         (ROOT/'tmp/gemini-live-ui.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2))
         browser.close()
         print('PASS real Gemini -> FastAPI -> PDF-grounded JSON -> isolated graph -> repeat cache hit')
-        print('New API calls:',evidence['new_api_calls'],'model:',evidence['model'])
+        print('Fresh generation:',evidence['fresh_generation_confirmed'],'model:',evidence['model'])
         return 0
 
 
 if __name__=='__main__':
-    print('Explicit live check: sends one synthetic question/PDF to Gemini and consumes API quota. No automatic retry.')
+    print('Explicit live check: sends a synthetic question/PDF to Gemini. One additional call is possible on model overload.')
     raise SystemExit(run())

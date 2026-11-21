@@ -103,6 +103,39 @@ def test_new_route_checks_consent_before_generation(fixture_provider):
     assert not fixture_provider
 
 
+@pytest.mark.parametrize(("statuses", "headers", "expected"), [
+    ([503, 200], {}, 200),
+    ([503, 503], {}, 503),
+    ([503], {"Retry-After": "15"}, 503),
+    ([429], {}, 429),
+])
+def test_interactive_retries_only_short_model_overload(monkeypatch, statuses, headers, expected):
+    request_urls = []
+    remaining = iter(statuses)
+    app.dependency_overrides[get_settings] = lambda: Settings(mode="gemini", api_key="stand-in-key", cache_ttl_seconds=0)
+    monkeypatch.setattr(interactive.random, "uniform", lambda low, high: 0.001)
+
+    def handle(request):
+        request_urls.append(request.url)
+        status = next(remaining)
+        if status != 200:
+            return httpx.Response(status, headers=headers, json={"error": {"message": "The model is currently experiencing high demand."}})
+        return httpx.Response(200, json={"candidates": [{"finishReason": "STOP", "content": {
+            "parts": [{"text": json.dumps(spec("등속 운동", GRAPH))}],
+        }}]})
+
+    monkeypatch.setattr(interactive, "GeminiProvider", lambda settings: GeminiProvider(settings, httpx.MockTransport(handle)))
+    response = TestClient(app).post("/api/learn", files={
+        "question": (None, "이동 거리는 왜 시간에 비례하나요?"),
+        "format": (None, "interactive"), "consent": (None, "true"),
+    })
+    assert response.status_code == expected
+    assert len(request_urls) == len(statuses)
+    assert len(set(request_urls)) == 1
+    if headers:
+        assert response.headers["Retry-After"] == headers["Retry-After"]
+
+
 def test_rejects_fabricated_quote_executable_fields_and_bounds_enforced_locally():
     too_many_curves = [{**GRAPH["curves"][0], "id": f"curve_{index}"} for index in range(5)]
     invalid_quiz = spec("보기 수 제한", GRAPH)
