@@ -4,6 +4,7 @@
   const $ = id => document.getElementById(id), storageKey = 'aha:video-job';
   const terminal = new Set(['completed', 'failed', 'cancelled']);
   const labels = {queued:'생성 순서를 기다리고 있어요', analyzing:'학습 자료 분석 중', storyboard:'영상 구성 중',
+    code:'Claude가 대본과 애니메이션을 작성 중', code_repair:'Claude가 애니메이션 오류를 수정 중',
     waiting_renderer:'영상 생성기를 기다리고 있어요', tts:'음성 및 애니메이션 생성 중', browser:'음성 및 애니메이션 생성 중',
     frames:'음성 및 애니메이션 생성 중', encode:'영상 인코딩 중', verify:'영상 파일 검사 중', ready:'영상 준비 완료',
     failed:'영상 생성에 실패했어요', cancelled:'영상 생성을 취소했어요'};
@@ -31,7 +32,8 @@
       if (displayedURL!==url) { $('generated-video').src=url; displayedURL=url; }
       $('generated-video-view').hidden=false;
       $('video-download').href=url+'?download=1';
-      $('generated-video-note').textContent=(data.result?.mode==='mock'?'mock 스토리보드 예제를 실제로 렌더링한 영상이에요. AI 분석 결과는 아니에요.':'Gemini 스토리보드를 로컬에서 렌더링했어요. 설명의 정확성을 검토해 주세요.')+' '+(data.result?.grounding?.message || '');
+      const note = data.result?.mode === 'claude_code' ? 'Claude가 작성한 애니메이션을 렌더링했어요. 설명의 정확성을 검토해 주세요.' : data.result?.mode === 'mock' ? 'mock 스토리보드 예제를 실제로 렌더링한 영상이에요. AI 분석 결과는 아니에요.' : 'Gemini 스토리보드를 로컬에서 렌더링했어요. 설명의 정확성을 검토해 주세요.';
+      $('generated-video-note').textContent = note + ' ' + (data.result?.grounding?.message || '');
       const expires=new Date(data.expires_at*1000).toLocaleString('ko-KR');
       $('video-job-retention').textContent=`보관 만료: ${expires}. 삭제·서버 재시작·쿠키 삭제 시 다시 받을 수 없어요. 필요한 영상은 다운로드해 주세요.`;
     } else clearPlayer();

@@ -16,7 +16,7 @@ def has_signature(data: bytes, mime: str) -> bool:
             "image/webp":data.startswith(b"RIFF") and data[8:12]==b"WEBP"}.get(mime,False)
 
 
-async def read_upload(upload) -> tuple[dict | None, bytes | None]:
+async def read_upload(upload, *, allow_text=False) -> tuple[dict | None, bytes | None]:
     if upload is None:
         return None, None
     if not isinstance(upload, UploadFile) or not upload.filename:
@@ -25,11 +25,21 @@ async def read_upload(upload) -> tuple[dict | None, bytes | None]:
     if len(filename)>200:
         raise HTTPException(422,"파일 이름을 200자 이하로 줄여 주세요.")
     mime = FILE_TYPES.get(PurePosixPath(filename).suffix.lower())
+    text_file = allow_text and PurePosixPath(filename).suffix.lower() == ".txt"
+    if text_file:
+        mime = "text/plain"
     if not mime or upload.content_type != mime:
         raise HTTPException(415,"PDF, PNG, JPEG, WebP 파일만 업로드할 수 있어요.")
     data = await upload.read(MAX_FILE_BYTES+1)
     if len(data)>MAX_FILE_BYTES:
         raise HTTPException(413,"파일은 5MB 이하로 올려 주세요.")
-    if not data or not has_signature(data,mime):
+    if text_file:
+        try:
+            decoded = data.decode("utf-8-sig").strip()
+            if not decoded or "\0" in decoded or len(decoded) > 12000:
+                raise ValueError()
+        except ValueError:
+            raise HTTPException(422, "UTF-8 텍스트 파일은 12,000자 이하로 올려 주세요.") from None
+    elif not data or not has_signature(data,mime):
         raise HTTPException(415,"파일 내용과 형식이 맞지 않아요. 올바른 파일을 선택해 주세요.")
     return {"filename":filename,"size_bytes":len(data),"content_type":mime,"analyzed":False}, data

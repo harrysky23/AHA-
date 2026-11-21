@@ -41,8 +41,9 @@ def same_origin(request):
 @router.post("", status_code=202)
 async def create(request: Request, settings: Settings = Depends(get_settings), jobs: VideoJobs = Depends(get_jobs)):
     same_origin(request)
-    data = await read_storyboard_input(request, settings)
-    if settings.mode == "gemini":
+    claude = jobs.policy.renderer == "claude"
+    data = await read_storyboard_input(request, settings, claude=claude)
+    if not claude and settings.mode == "gemini":
         settings.validate_gemini()
     token = session(request, create=True)
     result = jobs.submit(owner_digest(token), data, settings)

@@ -24,14 +24,15 @@ const progress=(phase,frames_done=0)=>{
 let browser,stage='bundle';
 try {
   progress('browser');
-  const serveUrl=await bundle({entryPoint:path.join(project,'src/index.ts'),rootDir:project,outDir:path.join(work,'bundle'),publicDir:path.join(work,'public'),enableCaching:false,
+  const serveUrl=await bundle({entryPoint:path.join(project,config.generated?'src/generated-entry.tsx':'src/index.ts'),rootDir:project,outDir:path.join(work,'bundle'),publicDir:path.join(work,'public'),enableCaching:false,
     webpackOverride:conf=>({...conf,context:project,mode:'production',devtool:false,
       resolve:{...conf.resolve,symlinks:false},resolveLoader:{...conf.resolveLoader,symlinks:false}})});
   stage='csp';
   const index=path.join(serveUrl,'index.html');
   const csp="default-src 'none';script-src 'self' 'unsafe-inline';style-src 'unsafe-inline';img-src 'self' data:;media-src 'self';font-src 'self';connect-src 'self';object-src 'none';frame-src 'none';worker-src 'none';base-uri 'none'";
   fs.writeFileSync(index,fs.readFileSync(index,'utf8').replace('<head>',`<head><meta http-equiv="Content-Security-Policy" content="${csp}">`));
-  browser=await openBrowser('chrome',{browserExecutable:config.browser,logLevel:'error',chromiumOptions:{flags:{
+  browser=await openBrowser('chrome',{browserExecutable:config.browser,logLevel:'error',
+    ...(config.generated ? {chromeMode:'chrome-for-testing'} : {}),chromiumOptions:{flags:{
     'disable-background-networking':true,'disable-component-update':true,'disable-sync':true,'no-first-run':true,
     'disable-gpu':true,'disable-gpu-compositing':true,'disable-skia-runtime-opts':true,'force-color-profile':'srgb'}}});
   // Pinned Remotion 4.0.545 exposes this CDP session on its Page type.
@@ -57,12 +58,18 @@ try {
     if(config.probe_network) {
       await page.evaluate(()=>fetch('https://aha-network-probe.invalid/').then(()=>false,()=>true));
     }
+    if (config.generated) {
+      await page.evaluateOnNewDocument(() => {
+        addEventListener('error', () => { document.documentElement.dataset.ahaRenderError = '1'; });
+        addEventListener('unhandledrejection', () => { document.documentElement.dataset.ahaRenderError = '1'; });
+      });
+    }
     const close=page.close.bind(page);
     page.close=async(...args)=>{
       try {
         const checked=await page.evaluate(()=>{
           const nodes=[...document.querySelectorAll('[data-safe]')];
-          return nodes.map(el=>{const r=el.getBoundingClientRect();return {kind:el.getAttribute('data-safe'),
+          return nodes.map(el=>{const r=el.getBoundingClientRect();return {kind:el.getAttribute('data-safe'),runtime_error:document.documentElement.dataset.ahaRenderError === '1',
             inside:r.left>=-1&&r.top>=-1&&r.right<=1081&&r.bottom<=1921,
             text_fits:el.scrollHeight<=el.clientHeight+1&&el.scrollWidth<=el.clientWidth+1,
             particles:[...document.querySelectorAll('[data-particle]')].slice(0,5).map(p=>({kind:p.getAttribute('data-particle'),x:p.getAttribute('cx'),y:p.getAttribute('cy'),d:p.getAttribute('d')}))};});
@@ -82,6 +89,7 @@ try {
     for(const frame of config.stills) await renderStill({...options,frame,output:path.join(work,'stills',`${frame}.png`),imageFormat:'png',isProduction:false});
   } else {
     await renderFrames({...options,outputDir:path.join(work,'frames'),imageFormat:'jpeg',jpegQuality:92,
+      ...(config.generated ? {disableSharedMemoryCapture:true,timeoutInMilliseconds:20000} : {}),
       imageSequencePattern:'frame-[frame].[ext]',concurrency:2,muted:true,
       onFrameUpdate:count=>progress('frames',count)});
   }
@@ -95,7 +103,7 @@ try {
     }
     if(audits[0].sha256!==audits.at(-1).sha256||audits[0].sha256===audits[1].sha256||blocked===0) throw Error('audit_failed');
   }
-  if(layout.some(x=>!x.inside||!x.text_fits)) throw Error('layout_overflow');
+  if(layout.some(x=>!x.inside||!x.text_fits||x.runtime_error)) throw Error('layout_or_runtime_error');
   fs.writeFileSync(path.join(work,'remotion-frame-report.json'),JSON.stringify({version:'4.0.545',layout,blocked_requests:blocked,network_policy:'loopback_only',frame_count:props.duration*props.fps,audit:audits}));
 } catch (error) {
   fs.writeFileSync(path.join(work,'remotion-error.json'),JSON.stringify({stage,code:'render_failed'}));

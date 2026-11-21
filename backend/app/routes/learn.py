@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/health")
-async def health(settings: Settings = Depends(get_settings)):
+async def health(request: Request, settings: Settings = Depends(get_settings)):
     configured = settings.mode == "mock"
     if settings.mode == "gemini":
         try:
@@ -18,7 +18,9 @@ async def health(settings: Settings = Depends(get_settings)):
             configured = True
         except (ConfigurationError, ValueError):
             pass
+    jobs = getattr(request.app.state, "video_jobs", None)
     return {"status":"ok", "mode":settings.mode, "external_ai":settings.mode == "gemini",
+            "video_renderer": jobs.policy.renderer if jobs else "svg",
             "ai_configured":configured, "request_timeout_seconds":math.ceil(settings.timeout_seconds)+15,
             "cache_enabled":settings.cache_ttl_seconds > 0}
 

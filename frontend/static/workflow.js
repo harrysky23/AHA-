@@ -7,9 +7,13 @@
   let busy = false;
   let fileError = '';
   let serverMode = 'mock';
+  let videoRenderer = 'svg';
+  let consentProvider = '';
+  const isClaudeVideo = () => videoRenderer === 'claude' && form.elements.format.value === 'shorts';
   let timeoutMilliseconds = 105000;
   const scrollBehavior = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
-  const formats = new Map([['pdf', 'application/pdf'], ['png', 'image/png'], ['jpg', 'image/jpeg'], ['jpeg', 'image/jpeg'], ['webp', 'image/webp']]);
+  const formats = new Map([['pdf', 'application/pdf'], ['png', 'image/png'], ['jpg', 'image/jpeg'], ['jpeg', 'image/jpeg'], ['webp', 'image/webp'], ['txt', 'text/plain']]);
+  const originalAccept = fileInput.accept;
   window.addEventListener('message', (event) => {
     const iframe = $('lesson-view').querySelector('iframe');
     // Sandboxed documents have an opaque origin. Check the exact sending window
@@ -32,12 +36,27 @@
   }
   function updateFormat() {
     const shorts=form.elements.format.value==='shorts';
-    $('consent-option').hidden=serverMode!=='gemini';
+    const claude = isClaudeVideo();
+    const provider = claude ? 'chatkhu' : serverMode === 'gemini' ? 'gemini' : '';
+    if (provider !== consentProvider) $('external-consent').checked = false;
+    consentProvider = provider;
+    $('consent-option').hidden = !provider;
+    $('gemini-consent-copy').hidden = provider !== 'gemini';
+    $('chatkhu-consent-copy').hidden = provider !== 'chatkhu';
+    fileInput.accept = originalAccept + (claude ? ',.txt,text/plain' : '');
+    $('video-renderer-note').hidden = claude;
+    $('video-duration').disabled = claude;
     $('shorts-options').hidden=!shorts;
     $('scope-title').textContent=shorts?'핵심 개념을 장면으로 연결해요':'이번에는 이 개념을 배워요';
     $('scope-description').textContent=shorts?'수학·과학·사회·정보 개념을 30–60초의 세로형 영상으로 구성해요. 어려운 표현은 텍스트 설명으로 바꿀 수 있어요.':'수학 II · f(x)=x², 점 P(1,1)에서 할선의 기울기 2+h → 접선의 기울기 2';
     $('mode-note').textContent=serverMode==='gemini'?'질문과 PDF 추출 텍스트로 설명을 구성하며 같은 입력의 생성 명세는 캐시를 재사용해요.':serverMode==='elice'?'Elice는 실제 API 사양 확정 후 연결할 예정이에요.':shorts?'mock은 네 가지 개념의 스토리보드 예제를 실제 영상으로 만들어요. AI 분석 결과가 아니에요.':'mock은 질문과 관계없이 고정 수학 II 예제를 사용해요. AI 분석 결과가 아니에요.';
     $('question-note').textContent=shorts?'개념이나 질문 중 하나를 입력해 주세요. mock 예제: 미분계수, 물의 순환, 수요와 공급, 이진 탐색.':'개념이나 질문 중 하나를 입력해 주세요. 수학 II 미분계수·할선→접선 질문을 우선 지원해요.';
+    if (claude) {
+      $('scope-description').textContent = 'Claude가 질문에 맞춰 약 30초 분량의 대본과 모션그래픽을 만들어요.';
+      $('mode-note').textContent = 'PDF, 이미지 또는 UTF-8 텍스트 파일을 참고 자료로 올릴 수 있어요.';
+      $('question-note').textContent = '개념이나 질문 중 하나를 입력해 주세요.';
+      $('video-duration').value = '30';
+    }
     submit.disabled=busy || (shorts && window.AHAVideo?.active===true);
     submit.textContent=shorts?'나만의 숏츠 만들기 →':'학습 결과 열기 →';
   }
@@ -51,6 +70,7 @@
   }).then(data => {
     if (!['mock','gemini','elice'].includes(data.mode)) throw new Error('mode');
     if (Number.isFinite(data.request_timeout_seconds)) timeoutMilliseconds = Math.min(110000, Math.max(15000, data.request_timeout_seconds * 1000));
+    videoRenderer = data.video_renderer;
     updateMode(data.mode, data.ai_configured);
   }).catch(() => { $('request-status').textContent = '서버 모드를 확인하지 못했어요. 제출 후 오류가 발생하면 기본 예제를 열 수 있어요.'; });
   function showError(message, fallback = false) {
@@ -71,7 +91,7 @@
       return;
     }
     const expected = formats.get(file.name.split('.').pop().toLowerCase());
-    if (!expected || (file.type && expected !== file.type)) fileError = 'PDF, PNG, JPEG, WebP 파일을 선택해 주세요.';
+    if (!expected || (expected === 'text/plain' && !isClaudeVideo()) || (file.type && expected !== file.type)) fileError = isClaudeVideo() ? 'PDF, PNG, JPEG, WebP, TXT 파일을 선택해 주세요.' : 'PDF, PNG, JPEG, WebP 파일을 선택해 주세요.';
     else if (!file.size) fileError = '빈 파일은 올릴 수 없어요.';
     else if (file.size > 5 * 1024 * 1024) fileError = '파일은 5MB 이하로 올려 주세요.';
     $('file-status').textContent = fileError || `${file.name} · ${(file.size / 1024).toFixed(1)}KB · 선택 완료`;
@@ -163,8 +183,8 @@
     const concept = $('concept').value.trim();
     const question = $('question').value.trim();
     if (!concept && !question) { showError('어려운 개념 또는 질문을 입력해 주세요. 예시 질문도 사용할 수 있어요.'); $('concept').focus(); return; }
-    if (serverMode === 'gemini' && !$('external-consent').checked) {
-      showError('Gemini 전송 안내를 확인하고 체크해 주세요.');
+    if (consentProvider && !$('external-consent').checked) {
+      showError(consentProvider === 'chatkhu' ? 'ChatKHU 전송 및 크레딧 안내를 확인하고 체크해 주세요.' : 'Gemini 전송 안내를 확인하고 체크해 주세요.');
       $('external-consent').focus(); return;
     }
     const body = new FormData();

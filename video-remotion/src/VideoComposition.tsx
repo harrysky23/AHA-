@@ -23,7 +23,9 @@ export const TransitionLayer:React.FC<{duration:number;children:React.ReactNode}
   return <AbsoluteFill style={{opacity,transform:`translateY(${(1-move)*24}px)`}}>{children}</AbsoluteFill>;
 };
 
-export const SceneRenderer:React.FC<{scene:Scene;duration:number;topic:string}>=({scene,duration,topic})=>{
+export type VisualProps = {sceneIndex:number;progress:number};
+type DynamicVisual = React.ComponentType<VisualProps>;
+export const SceneRenderer:React.FC<{scene:Scene;duration:number;topic:string;visual?:DynamicVisual;sceneIndex?:number}>=({scene,duration,topic,visual:Visual,sceneIndex=0})=>{
   const f=useCurrentFrame(),{fps}=useVideoConfig();
   const water=topic.includes('물')&&topic.includes('순환');
   const active=water?(scene.type==='introduction'||scene.type==='overview'?'overview':scene.type):'text_explanation';
@@ -36,7 +38,9 @@ export const SceneRenderer:React.FC<{scene:Scene;duration:number;topic:string}>=
     </div>
     <div data-safe="concept" style={{position:'absolute',left:56,top:418,width:968,height:1070,borderRadius:38,background:'#ffffffee',border:'2px solid #e9e1fb',boxShadow:'0 20px 60px #46376512',overflow:'hidden'}}>
       <div style={{height:895,padding:'24px 24px 0',transform:`scale(${.985+.015*clamp(f/(fps*.6))})`}}>
-        {active==='text_explanation'?<div style={{padding:60,fontSize:44,lineHeight:1.55,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{page}</div>:<ConceptAnimation type={active}/>}
+        {Visual ? <div style={{width:'100%',height:'100%',overflow:'hidden',position:'relative',isolation:'isolate',contain:'strict'}}>
+          <Visual sceneIndex={sceneIndex} progress={clamp(f/Math.max(1,duration-1))}/>
+        </div> : active==='text_explanation'?<div style={{padding:60,fontSize:44,lineHeight:1.55,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{page}</div>:<ConceptAnimation type={active}/>}
       </div>
       <div style={{padding:'18px 34px',fontSize:29,lineHeight:1.45,color:'#675b80',wordBreak:'keep-all'}}>{scene.explanation}</div>
     </div>
@@ -60,17 +64,17 @@ export const AudioTrack:React.FC<Pick<VideoProps,'audio'|'audioOffset'>>=({audio
   return audio&&localAsset(audio)?<Sequence from={Math.round(audioOffset*fps)}><Html5Audio src={staticFile(audio)}/></Sequence>:null;
 };
 
-export const VideoComposition:React.FC<VideoProps>=props=>{
+export const VideoComposition:React.FC<VideoProps & {visual?:DynamicVisual}>=props=>{
   const f=useCurrentFrame(),{fps,durationInFrames}=useVideoConfig();
   return <AbsoluteFill style={{fontFamily:font,color:ink}}>
     <BackgroundLayer src={props.background}/>
-    {props.scenes.map(scene=>{
+    {props.scenes.map((scene,sceneIndex)=>{
       const from=Math.round(scene.start_seconds*fps),duration=Math.round(scene.end_seconds*fps)-from;
       if(duration<1)return null; // A coarse preview may not sample a short scene.
-      return <Sequence key={scene.id} from={from} durationInFrames={duration}><SceneRenderer scene={scene} duration={duration} topic={props.topic}/></Sequence>;
+      return <Sequence key={scene.id} from={from} durationInFrames={duration}><SceneRenderer scene={scene} duration={duration} topic={props.topic} visual={props.visual} sceneIndex={sceneIndex}/></Sequence>;
     })}
     <BrandOverlay topic={props.topic}/><SubtitleLayer captions={props.captions} reviewPrompt={props.reviewPrompt} topic={props.topic}/><AudioTrack audio={props.audio} audioOffset={props.audioOffset}/>
-    <div style={{position:'absolute',top:1840,left:72,fontSize:22,color:'#6f6482',background:'#faf8ffef',borderRadius:12,padding:'6px 14px'}}>{props.topic.includes('순환')?'개념을 설명하기 위한 모형 · 증산·지하수 저장은 생략':'설명용 학습 모형 · 명세 검토 필요'}</div>
+    <div style={{position:'absolute',top:1840,left:72,fontSize:22,color:'#6f6482',background:'#faf8ffef',borderRadius:12,padding:'6px 14px'}}>{!props.visual&&props.topic.includes('순환')?'개념을 설명하기 위한 모형 · 증산·지하수 저장은 생략':'설명용 학습 모형 · 명세 검토 필요'}</div>
     <div style={{position:'absolute',bottom:0,left:0,width:`${100*f/durationInFrames}%`,height:10,background:violet}}/>
   </AbsoluteFill>;
 };

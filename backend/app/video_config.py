@@ -35,7 +35,7 @@ def get_video_settings():
             render=RenderOptions(preview=preview == "true", fps=int(env.get("AHA_VIDEO_FPS", "30")),
                 timeout_seconds=int(env.get("AHA_VIDEO_RENDER_TIMEOUT_SECONDS", "600")),
                 max_disk_bytes=int(env.get("AHA_VIDEO_MAX_DISK_MB", "512"))*1024**2))
-        if not (value.renderer in {"svg","remotion"} and 1 <= value.queue_limit <= 8 and value.queue_limit + 1 <= value.max_jobs <= 64
+        if not (value.renderer in {"svg","remotion","claude"} and 1 <= value.queue_limit <= 8 and value.queue_limit + 1 <= value.max_jobs <= 64
                 and 120 <= value.ttl_seconds <= 7200 and 10 <= value.run_seconds <= 1800
                 and 512*1024**2 <= value.storage_bytes <= 4096*1024**2):
             raise ValueError()

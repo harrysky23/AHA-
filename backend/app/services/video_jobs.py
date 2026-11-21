@@ -94,7 +94,8 @@ class VideoJobs:
         for old in list(self.jobs.values()):
             if len(self.jobs) < self.policy.max_jobs:
                 break
-            if old.status in {"cancelled", "failed"} and old.leases == 0:
+            if (old.status in {"cancelled", "failed"} and old.leases == 0
+                    and not (self.policy.root / old.id).exists()):
                 self.jobs.pop(old.id, None)
         waiting = sum(j.status == "queued" for j in self.jobs.values())
         if waiting >= self.policy.queue_limit or len(self.jobs) >= self.policy.max_jobs:
@@ -177,6 +178,28 @@ class VideoJobs:
         job.status, job.stage = "generating", "analyzing"
         phase = "generation"
         try:
+            if self.policy.renderer == "claude":
+                from .generated_video import resolve_reference, run_generated_video
+                job.generation_task = asyncio.create_task(resolve_reference(job.payload))
+                reference, image, grounding = await job.generation_task
+                job.generation_task = None
+                job.payload, job.settings = None, None
+                if job.cancel.is_set():
+                    return
+                await self.sweep()
+                if self.storage_used + self.policy.render.max_disk_bytes > self.policy.storage_bytes:
+                    raise LearningError("video_storage_full", "영상 저장 공간이 부족해요.", 507)
+                phase = "rendering"
+                job.status, job.stage = "rendering", "waiting_renderer"
+                loop = asyncio.get_running_loop()
+                def show_stage(stage):
+                    loop.call_soon_threadsafe(setattr, job, "stage", stage)
+                result = await loop.run_in_executor(self.pool, lambda: run_generated_video(
+                    self.path(job), self.policy.render, job.cancel, reference, image, grounding, on_stage=show_stage))
+                if not job.cancel.is_set():
+                    job.result = result
+                    job.status, job.stage, job.progress = "completed", "ready", {}
+                return
             def stage(value):
                 if not job.cancel.is_set():
                     job.stage = value
@@ -229,7 +252,9 @@ class VideoJobs:
                     final_error = {"code": "video_job_timeout", "message": "영상 작업의 전체 처리 시간을 초과했어요.", "phase": phase, "scene_id": job.progress.get("scene_id")}
                 else:
                     final_status, final_error = "cancelled", None
-            await self._clean_files(job)
+            # Failed Claude jobs retain private TSX and diagnostics until deletion or expiry.
+            if self.policy.renderer != "claude" or job.cancel.is_set():
+                await self._clean_files(job)
             job.result, job.error, job.status, job.stage = None, final_error, final_status, final_status
 
     async def _run(self):

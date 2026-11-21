@@ -20,6 +20,8 @@ class ChatKHUSettings:
     image_model: str = "gemini-3.1-flash-lite-image"
     video_model: str = "fal-ai/kling-video/v3"
     tts_model: str = "gemini-3.1-flash-tts-preview"
+    code_model: str = "claude-opus-5-5"
+    repair_model: str = "claude-opus-5-5"
     request_timeout: float = 120
     operation_timeout: float = 600
     max_polls: int = 60
@@ -51,6 +53,8 @@ def get_chatkhu_settings():
         base_url=values.get("CHATKHU_BASE_URL", OFFICIAL_BASE) or OFFICIAL_BASE,
         image_model=values.get("CHATKHU_IMAGE_MODEL", "gemini-3.1-flash-lite-image") or "",
         video_model=values.get("CHATKHU_VIDEO_MODEL", "fal-ai/kling-video/v3") or "",
-        tts_model=values.get("CHATKHU_TTS_MODEL", "gemini-3.1-flash-tts-preview") or "")
+        tts_model=values.get("CHATKHU_TTS_MODEL", "gemini-3.1-flash-tts-preview") or "",
+        code_model=values.get("VIDEO_CODE_MODEL", "claude-opus-5-5"),
+        repair_model=values.get("VIDEO_REPAIR_MODEL", "claude-opus-5-5"))
     settings.validate()
     return settings

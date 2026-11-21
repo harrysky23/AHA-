@@ -1,6 +1,30 @@
 # AHA! (아하!) · Remotion 렌더러 추가
 
 
+## Claude 기반 범용 학습 숏츠
+
+`AHA_VIDEO_RENDERER=claude`를 설정하면 기존 숏츠 폼과 `/api/videos` 작업 큐에서 새 경로를 사용합니다. ChatKHU의 Claude가 장면별 한국어 대본과 중앙 시각화 TSX를 직접 작성합니다. 기존 React 화면이 브랜드·제목·자막을 렌더링하고, 기존 ChatKHU TTS의 음성을 FFmpeg로 결합합니다. 기본 출력은 1080×1920·30fps H.264/AAC입니다. 기존 `svg` 기본값과 `remotion` 선택도 사용할 수 있습니다.
+
+```bash
+docker build -t aha-remotion-isolated:1 video-remotion
+AHA_VIDEO_RENDERER=claude .venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --workers 1
+```
+
+`.env`의 ChatKHU 인증·TTS 설정을 사용합니다. `VIDEO_CODE_MODEL`과 `VIDEO_REPAIR_MODEL`의 기본값은 모두 `claude-opus-5-5`입니다. 이 모드의 숏츠 폼에서 PDF, PNG/JPEG/WebP, UTF-8 TXT를 첨부할 수 있습니다. API의 `material_text` 필드에도 참고 텍스트를 입력할 수 있습니다. 첨부 이미지 자체는 Claude의 참고 입력으로 전송됩니다. 동의 화면에서 전송과 크레딧 사용을 안내합니다.
+
+실제 코드 생성 1회와 TTS 최대 1회가 한 작업에 들어갑니다. 코드 검사나 렌더/인코딩 실패에서만 같은 대본을 유지한 채 코드 수정 1회를 시도합니다. 이미지 생성과 영상 생성 API 호출은 0회입니다. Docker 이미지 확인에 실패하면 Claude 요청 전 중단합니다. 입력·출력 토큰, 모델, 응답 시간, 반환된 차감 정보와 오류 코드는 `tmp/video-jobs/<job-id>/code-*/report.json`에 기록됩니다. 대본과 TSX는 같은 비공개 디렉터리에서 디버깅할 수 있고 웹에서 제공하지 않습니다. 작업 만료·삭제·서버 종료 시 함께 정리됩니다.
+
+```bash
+# 오프라인 호출 계획
+.venv/bin/python scripts/check_claude_video.py A
+# 명시적으로 승인한 첫 실계정 테스트. 수정 호출까지 승인한 경우
+.venv/bin/python scripts/check_claude_video.py A --live --allow-repair
+```
+
+실계정 CLI의 결과는 `tmp/claude-video/<A|B|C>/video.mp4`에 저장합니다. API 호출은 모델·계정 정책에 따라 기존 크레딧을 차감합니다. `--allow-repair`는 수정 호출 최대 1회를 추가로 허용합니다. 한 번 승인한 검증을 반복 실행하면 다시 요청을 보내므로 결과와 작업 보고서를 먼저 확인하세요.
+
+TSX 검증과 Remotion 실행은 비루트 Docker 컨테이너에서 이뤄집니다. 코드에는 지정된 React JSX·SVG 요소와 Remotion 훅만 허용합니다. 컨테이너 실행에는 네트워크, 호스트 비밀 파일, Docker 소켓, 쓰기 가능한 호스트 디렉터리를 제공하지 않습니다. 읽기 전용 루트와 입력, tmpfs, CPU·메모리·프로세스 수·외부 실행 시간 제한을 사용합니다. TTS는 한 번 호출한 WAV의 실제 길이와 쉼을 기준으로 장면을 구성하며 쉼을 구분하기 어려울 때는 문자 수로 근사합니다. 단어 수준의 시점은 제공하지 않습니다. [변경 목록과 검증 기록](docs/CLAUDE_VIDEO_NOTES.md).
+
 ## Remotion · 물의 순환 모션그래픽
 
 기존 FFmpeg 렌더러와 별도로 React/TypeScript + **Remotion4.0.545** 경로를 추가했습니다. 기존 이미지·19.4초 한국어 TTS를 재사용해 증발 입자 상승 → 응결·구름 형성 → 강수 → 하천 이동 → 전체 순환을 프레임 기반으로 표시합니다. 기본 출력1080×1920/30fps/H.264+AAC, 프리뷰540×960입니다. 외부 AI 호출은 없습니다.

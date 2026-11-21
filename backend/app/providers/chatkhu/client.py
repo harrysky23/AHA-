@@ -86,7 +86,7 @@ class GatewayClient:
         if self.on_event:
             self.on_event(value)
 
-    def _bytes(self, method, path, *, payload=None, params=None, limit=MAX_JSON, media_url=None):
+    def _bytes(self, method, path, *, payload=None, params=None, limit=MAX_JSON, media_url=None, headers=None):
         if media_url is None:
             if not path.startswith("/") or ".." in path.split("/") or "?" in path or "#" in path:
                 raise ChatKHUError("invalid_path", "허용되지 않는 Gateway 경로예요.")
@@ -102,7 +102,7 @@ class GatewayClient:
             if self.clock() >= deadline:
                 raise ChatKHUError("request_timeout", "응답 수신 제한 시간이 끝났어요. 자동으로 요청을 다시 보내지 않아요.")
         try:
-            with client.stream(method, url, json=payload, params=params) as response:
+            with client.stream(method, url, json=payload, params=params, headers=headers) as response:
                 check_deadline()
                 if response.is_redirect:
                     raise ChatKHUError("redirect_blocked", "자동 리다이렉트를 차단했어요. 인증 정보가 외부로 전달되지 않아요.", response.status_code)
@@ -142,6 +142,50 @@ class GatewayClient:
         if not isinstance(data.get("data"), list):
             raise ChatKHUError("invalid_response", "모델 목록 응답 형식을 확인하지 못했어요.")
         return data
+
+    def complete_video_code(self, model, messages, *, repair=False):
+        kind = "code_repair" if repair else "code"
+        with self.generation_lock:
+            if self.sent.get(kind):
+                raise ChatKHUError("call_limit", "코드 생성과 수정은 각각 작업당 1회만 시도해요.")
+            self.sent[kind] = 1
+        started = self.clock()
+        self.event({"phase": "submission", "kind": kind, "model": model})
+        try:
+            system = "\n".join(m["content"] for m in messages if m["role"] == "system")
+            conversation = [m for m in messages if m["role"] != "system"]
+            data, headers = self._json("POST", "/claude/v1/messages/", payload={
+                "model": model, "system": system, "messages": conversation, "max_tokens": 5500,
+                "output_config": {"effort": "low"}, "stream": False,
+            }, limit=512*1024, headers={"anthropic-version": "2023-06-01"})
+            measured = accounting(data, headers)
+            usage = data.get("usage")
+            if isinstance(usage, dict):
+                for field in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+                    if type(usage.get(field)) is int and 0 <= usage[field] < 10**9:
+                        measured[field] = usage[field]
+            actual = data.get("model")
+            if not isinstance(actual, str) or not re.fullmatch(r"[a-zA-Z0-9._/-]{1,100}", actual) or self.settings.api_key in actual:
+                actual = None
+            stop_reason = data.get("stop_reason")
+            known_stops = ("end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal")
+            self.event({"phase": "accepted", "kind": kind, "model": model, "actual_model": actual,
+                        "stop_reason": stop_reason if stop_reason in known_stops else None,
+                        "elapsed_seconds": round(self.clock()-started, 3), **measured})
+            if stop_reason == "max_tokens":
+                raise ChatKHUError("code_output_limit", "Claude가 출력 토큰 한도에 도달해 코드 응답을 완료하지 못했어요.")
+            blocks = data.get("content")
+            content = "".join(
+                block["text"] for block in blocks
+                if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
+            ) if isinstance(blocks, list) else ""
+            if stop_reason != "end_turn" or not content.strip():
+                raise ChatKHUError("invalid_code_response", "Claude 응답에 완성된 코드 텍스트가 없어요.")
+            return content
+        except ChatKHUError as exc:
+            self.event({"phase": "error", "kind": kind, "model": model, "code": exc.code,
+                        "http_status": exc.status, "message": exc.message, "elapsed_seconds": round(self.clock()-started, 3)})
+            raise
 
     def estimate(self, kind, payload):
         if kind not in {"image", "video"}:
