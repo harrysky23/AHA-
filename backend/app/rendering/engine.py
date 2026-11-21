@@ -55,7 +55,8 @@ def _stop(process):
 
 
 def render_storyboard(value, output: Path, options: RenderOptions | None = None, *,
-                      cancel_event: Event | None = None, on_progress: Callable[[dict], None] | None = None) -> dict:
+                      cancel_event: Event | None = None, on_progress: Callable[[dict], None] | None = None,
+                      media_plan=None, asset_root: Path | None = None) -> dict:
     """Render a validated spec to a local file. Never reads .env or calls AI.
 
     No source-grounding claim: quote matching belongs to the generation service
@@ -63,6 +64,10 @@ def render_storyboard(value, output: Path, options: RenderOptions | None = None,
     """
     spec = validate_spec(value)
     options = options or RenderOptions()
+    plan = None
+    if media_plan is not None:
+        from .multimodal import parse_media_plan
+        plan = parse_media_plan(media_plan, spec)
     def check_cancel():
         if cancel_event is not None and cancel_event.is_set():
             raise RenderError("render_cancelled", "영상 생성을 취소했어요.")
@@ -82,6 +87,9 @@ def render_storyboard(value, output: Path, options: RenderOptions | None = None,
             budget = Budget(work, options)
             (work / "input.json").write_text(spec.model_dump_json(), encoding="utf-8")
             (work / "options.json").write_text(json.dumps(asdict(options)), encoding="utf-8")
+            if plan is not None:
+                from .multimodal import stage_media
+                stage_media(plan,asset_root,work,budget,cancel_event)
             # No .env loaded and no GEMINI_API_KEY/other credentials inherited.
             env = {k: v for k, v in os.environ.items() if k in {"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "AHA_BROWSER_EXECUTABLE"}}
             env["PYTHONPATH"] = str(ROOT)

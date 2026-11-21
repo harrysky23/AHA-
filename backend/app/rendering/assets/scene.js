@@ -106,7 +106,8 @@ function text(v,t,duration){const pages=v.paragraphs.flatMap(p=>parts(p,150)),in
   box(v.heading,60,75,848,165,{font:50,min:28,weight:800,color:colors.violet});
   const alpha=ease((t-(duration/pages.length)*index)/.4),el=box(pages[index],60,280,848,480,{font:47,min:29});el.style.opacity=String(alpha);el.style.transform=`translateY(${(1-alpha)*24}px)`;
   box(`${index+1} / ${pages.length}`,60,810,848,48,{font:25,min:23,align:'center',color:'#9b8eae'});}
-function draw(scene,t){current=scene;root.replaceChildren();overflow=[];debug={};let v=scene.visualization;const duration=scene.end_seconds-scene.start_seconds;
+function draw(scene,t,textMotion=false){current=scene;root.replaceChildren();overflow=[];debug={};let v=scene.visualization;const duration=scene.end_seconds-scene.start_seconds;
+  if(textMotion)v={type:'text_explanation',heading:scene.screen.title,paragraphs:[...scene.screen.bullets,...scene.screen.formulas,scene.narration_ko]};
   if(fallbacks[scene.id])v={type:'text_explanation',heading:scene.screen.title,paragraphs:collect(v),fallback_reason:fallbacks[scene.id]};
   try{switch(v.type){case'function_graph':graph(v,t);break;case'process_diagram':process(v,t);break;case'timeline':timeline(v,t);break;case'comparison':compare(v,t);break;case'state_transition':transition(v,t);break;case'text_explanation':text(v,t,duration);break;default:throw Error('unsupported_visualization');}
     if(overflow.length&&v.type!=='text_explanation')throw Error('text_capacity');
@@ -114,15 +115,15 @@ function draw(scene,t){current=scene;root.replaceChildren();overflow=[];debug={}
     if(!reasons.includes(e.message))throw Error('renderer_failed');fallbacks[scene.id]=e.message;root.replaceChildren();overflow=[];text({heading:scene.screen.title,paragraphs:collect(scene.visualization)},t,duration);}
   if(fallbacks[scene.id]){const tag=document.createElement('div');tag.className='fallback-tag';tag.textContent='텍스트 설명으로 대체';root.append(tag);}
 }
-function render(time){if(!Number.isFinite(time)||time<0||time>spec.duration_seconds)throw Error('invalid_time');
+function render(time,options={}){if(!Number.isFinite(time)||time<0||time>spec.duration_seconds)throw Error('invalid_time');
   const scene=spec.scenes.find(s=>time>=s.start_seconds&&time<s.end_seconds)||spec.scenes.at(-1),t=time-scene.start_seconds;
   $('topic').textContent=spec.topic;$('title').textContent=scene.screen.title;fit($('title'),58,32);
-  draw(scene,t);
+  draw(scene,t,options.text_motion===true);
   $('notes').replaceChildren();const formulas=scene.screen.formulas.flatMap(p=>parts(p,24)),bullets=scene.screen.bullets.flatMap(p=>parts(p,60));
   if(formulas.length){const f=document.createElement('div');f.className='formula';f.textContent=formulas[Math.min(formulas.length-1,Math.floor(t/(scene.end_seconds-scene.start_seconds)*formulas.length))];$('notes').append(f);}
   if(bullets.length){const b=document.createElement('div');b.className='bullet';b.textContent=bullets[Math.min(bullets.length-1,Math.floor(t/(scene.end_seconds-scene.start_seconds)*bullets.length))];$('notes').append(b);}
   const chunks=parts(scene.narration_ko,70);let total=chunks.reduce((n,p)=>n+p.length,0),cursor=t/(scene.end_seconds-scene.start_seconds)*total,sub=chunks.at(-1);
-  for(const p of chunks){cursor-=p.length;if(cursor<0){sub=p;break;}}$('subtitle').textContent=sub;fit($('subtitle'),39,31);
+  for(const p of chunks){cursor-=p.length;if(cursor<0){sub=p;break;}}$('subtitle').textContent=typeof options.subtitle==='string'?options.subtitle:sub;fit($('subtitle'),39,31);
   const references=scene.source_ids.map(id=>'p.'+spec.sources.find(source=>source.id===id).page).join(', ');
   $('footer').textContent=`${spec.scenes.indexOf(scene)+1} / ${spec.scenes.length}   ·   ${references?'자료 '+references+' · 명세 검토 필요':'설명용 학습 모형 · 명세 검토 필요'}`;
   $('progress').style.width=(time/spec.duration_seconds*1080)+'px';

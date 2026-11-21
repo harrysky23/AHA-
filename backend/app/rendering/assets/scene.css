@@ -18,3 +18,10 @@ body{font-family:"Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:#2d2345}
 .node strong{font-size:33px}.node span{font-size:24px}.pill{background:#eee8ff;border-radius:20px;padding:12px 20px}
 .fallback-tag{position:absolute;bottom:18px;right:24px;color:#8d819f;font-size:20px}
 svg{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
+/* Optional, trusted overlay layout. AI media is composited outside Chromium. */
+html.multimodal,.multimodal body,.multimodal #stage{background:transparent!important}
+.multimodal #brand,.multimodal #topic,.multimodal #title{background:#f9f7fff2;border-radius:16px}
+.multimodal #visual-card{top:600px;height:780px}
+.multimodal #visual{top:610px;transform:scale(.82);transform-origin:top center}
+.multimodal #notes{top:1390px;height:140px;background:#f9f7ff}
+.multimodal #footer{background:#f9f7fff2;border-radius:12px;padding:3px 8px}

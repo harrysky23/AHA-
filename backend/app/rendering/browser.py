@@ -29,8 +29,9 @@ def browser_executable():
 
 
 class FrameRenderer:
-    def __init__(self, spec, budget: Budget):
+    def __init__(self, spec, budget: Budget, *, layered=False):
         self.spec, self.budget = spec, budget
+        self.layered = layered
 
     def __enter__(self):
         from playwright.sync_api import sync_playwright
@@ -58,6 +59,8 @@ class FrameRenderer:
             self.page = self.context.new_page()
             self.page.set_default_timeout(10000)
             self.page.set_content(template_html(), wait_until="load", timeout=min(10000, self.budget.remaining()*1000))
+            if self.layered:
+                self.page.evaluate("() => document.documentElement.classList.add('multimodal')")
             self.page.evaluate("() => document.fonts.ready")
             # Passed as serialized arguments, never interpolated into JS/HTML.
             self.layout = self.page.evaluate("value => window.AHA.init(value)", self.spec.model_dump())
@@ -68,15 +71,17 @@ class FrameRenderer:
             self.__exit__(None, None, None)
             raise RenderError("browser_failed", "프레임 브라우저를 시작할 수 없어요. Chrome 또는 Playwright Chromium 설치를 확인해 주세요.", self.budget.scene_id) from None
 
-    def frame(self, seconds: float) -> tuple[bytes, dict]:
+    def frame(self, seconds: float, *, subtitle=None, text_motion=False) -> tuple[bytes, dict]:
         self.budget.check()
         scene = next((s for s in self.spec.scenes if s.start_seconds <= seconds < s.end_seconds), self.spec.scenes[-1])
         self.budget.scene_id = scene.id
         try:
-            state = self.page.evaluate("t => window.AHA.render(t)", seconds)
+            state = self.page.evaluate("v => window.AHA.render(v.time, {subtitle:v.subtitle,text_motion:v.text_motion})",
+                                       {"time":seconds,"subtitle":subtitle,"text_motion":text_motion})
             if state["overflow"]:
                 raise RenderError("layout_overflow", "텍스트를 안전 영역에 배치할 수 없어요.", scene.id)
-            frame = self.page.screenshot(type="png", animations="disabled", timeout=min(10000, self.budget.remaining()*1000))
+            frame = self.page.screenshot(type="png", animations="disabled", omit_background=self.layered,
+                                         timeout=min(10000, self.budget.remaining()*1000))
         except RenderError:
             raise
         except Exception:

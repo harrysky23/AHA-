@@ -30,7 +30,8 @@ def verify_media(info: dict, spec: StoryboardSpec, options: RenderOptions) -> di
                 and (v["width"], v["height"]) == (width, height) and v["pix_fmt"] == "yuv420p"
                 and abs(fps_n/fps_d-options.fps) < .001
                 and all(abs(t-spec.duration_seconds) <= .1 for t in [duration, audio_duration, video_duration])):
-            raise ValueError()
+            # Only measured numbers, never user text/paths or subprocess output.
+            raise RenderError("invalid_mp4", f"출력 검증 실패: 영상 {v['width']}×{v['height']}, {fps_n/fps_d:.3f}fps, 길이 {duration:.3f}/{video_duration:.3f}/{audio_duration:.3f}초, 스트림 {len(videos)}/{len(audios)}, 코덱 {v['codec_name']}/{a['codec_name']}, 픽셀 {v['pix_fmt']}.")
         return {"video_codec": "h264", "audio_codec": "aac", "pixel_format": "yuv420p", "width": width, "height": height,
                 "fps": options.fps, "duration_seconds": duration, "audio_seconds": audio_duration, "video_seconds": video_duration,
                 "audio_channels": a["channels"], "audio_sample_rate": int(a["sample_rate"])}
@@ -48,19 +49,42 @@ def render(work: Path, options: RenderOptions):
         p = work / "progress.tmp"
         p.write_text(json.dumps({"scene_id": scene_id, "phase": phase, **detail}), encoding="utf-8")
         p.replace(work / "progress.json")
-    audio, timings = build_narration(spec, work, budget, MacOSSay(), lambda scene_id: progress(scene_id, "tts"))
+    plan = None
+    entries, fallbacks, external = {}, [], None
+    background = None
+    if (work / "media-plan.json").exists():
+        from .multimodal import parse_media_plan, prepare_assets, resolve_scenes, external_narration, build_background
+        plan = parse_media_plan(load_json((work / "media-plan.json").read_text()), spec)
+        metadata, failed = prepare_assets(plan, work, budget)
+        entries, fallbacks = resolve_scenes(spec, plan, failed)
+        progress(None, "tts")
+        external, reason = external_narration(spec, plan, work, budget, metadata, failed)
+        if reason:
+            fallbacks.append({"component":"narration","reason":reason,"to":"macos_local_tts"})
+        if any(e["mode"].startswith("ai_") for e in entries.values()):
+            background = build_background(spec, plan, entries, work, budget, progress, fallbacks)
+    if external:
+        audio, timings = external["path"], [{k:v for k,v in external.items() if k != "path"}]
+    else:
+        audio, timings = build_narration(spec, work, budget, MacOSSay(), lambda scene_id: progress(scene_id, "tts"))
     frames = work / "frames"
     frames.mkdir()
     frame_count = spec.duration_seconds * options.fps
     budget.scene_id = None
     progress(None, "browser")
-    with FrameRenderer(spec, budget) as renderer:
+    with FrameRenderer(spec, budget, layered=background is not None) as renderer:
         for index in range(frame_count):
             seconds = index/options.fps
             scene = next(s for s in spec.scenes if s.start_seconds <= seconds < s.end_seconds)
             budget.scene_id = scene.id
             progress(scene.id, "frames", frames_done=index, frames_total=frame_count)
-            png, state = renderer.frame(seconds)
+            frame_options = {}
+            if plan:
+                frame_options["text_motion"] = entries[scene.id]["mode"] == "text_motion"
+            if external:
+                from .multimodal import subtitle_at
+                frame_options["subtitle"] = subtitle_at(spec, seconds, external["spoken_seconds"], plan.review_prompt)
+            png, state = renderer.frame(seconds, **frame_options)
             (frames / f"{index:06d}.png").write_bytes(png)
             budget.check()
         layout = renderer.layout
@@ -70,9 +94,16 @@ def render(work: Path, options: RenderOptions):
     budget.scene_id = None
     output = work / "result.mp4"
     # Only fixed generated paths/validated numbers are passed to FFmpeg.
-    run_process([executable("ffmpeg"), "-nostdin", "-v", "error", "-y", "-framerate", str(options.fps),
-                 "-i", str(frames / "%06d.png"), "-i", str(audio), "-map", "0:v:0", "-map", "1:a:0",
-                 "-vf", f"scale={options.size[0]}:{options.size[1]}:flags=lanczos",
+    command = [executable("ffmpeg"), "-nostdin", "-v", "error", "-y"]
+    if background:
+        command += ["-protocol_whitelist","file,pipe","-i",str(background),"-framerate",str(options.fps),
+                    "-i",str(frames / "%06d.png"),"-i",str(audio),"-filter_complex",
+                    f"[0:v][1:v]overlay=0:0:shortest=1,scale={options.size[0]}:{options.size[1]}:flags=lanczos:out_range=tv,setparams=range=limited[out]",
+                    "-map","[out]","-map","2:a:0","-color_range","tv"]
+    else:
+        command += ["-framerate",str(options.fps),"-i",str(frames / "%06d.png"),"-i",str(audio),
+                    "-map","0:v:0","-map","1:a:0","-vf",f"scale={options.size[0]}:{options.size[1]}:flags=lanczos"]
+    run_process(command + [
                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
                  "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-t", str(spec.duration_seconds),
                  "-movflags", "+faststart", "-map_metadata", "-1", str(output)], budget, "encode_failed")
@@ -81,10 +112,16 @@ def render(work: Path, options: RenderOptions):
     progress(None, "verify", frames_done=frame_count, frames_total=frame_count)
     run_process([executable("ffmpeg"), "-nostdin", "-v", "error", "-xerror", "-i", str(output),
                  "-f", "null", "-"], budget, "decode_failed")
-    report = {"renderer_version": "html-svg-1", "schema_version": spec.schema_version,
-              "media": media, "frame_count": frame_count, "capture_size": [1080, 1920], "layout": layout, "tts_engine": MacOSSay.name,
+    report = {"renderer_version": "html-svg-multimodal-1" if plan else "html-svg-1", "schema_version": spec.schema_version,
+              "media": media, "frame_count": frame_count, "capture_size": [1080, 1920], "layout": layout,
+              "tts_engine": "chatkhu-approved-local-audio" if external else MacOSSay.name,
               "narration": timings, "decoded": True,
               "sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
+    if plan:
+        report["multimodal"] = {"plan_version":plan.schema_version,"scene_modes":list(entries.values()),
+            "fallbacks":fallbacks,"external_narration":external is not None,"external_api_calls":0,
+            "caption_alignment":"approximate_character_time" if external else "local_scene_time",
+            "video_policy":"loop_reviewed_crop_no_source_audio","assets_reused":len(plan.assets)}
     (work / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

@@ -1,4 +1,80 @@
-# AHA! (아하!) · Phase 3-C
+# AHA! (아하!) · Phase 3-D
+
+## Phase 3-D · 승인형 멀티모달 영상 합성
+
+ChatKHU 이미지·영상·한국어 TTS Provider를 구현하고 각각 승인된 실제 생성1회를 검증했습니다. 기존 StoryboardSpec에 별도 `MediaPlan`을 연결해 로컬 AI 이미지·영상·음성과 SVG·자막을 FFmpeg로 합성합니다. 물의 순환 A/B/C 비교 결과는 `tmp/chatkhu/comparison/verified-preview/`와 `verified-full/`에 저장합니다. 기존 Gemini HTML/스토리보드와 Phase 3-C 웹은 유지하며, 웹 작업은 계속 로컬 SVG/TTS를 사용합니다. ChatKHU 과금 생성은 별도 승인형 CLI에서만 실행합니다.
+
+```dotenv
+CHATKHU_API_KEY=로컬에서만_설정
+CHATKHU_BASE_URL=https://factchat-cloud.mindlogic.ai/v1/gateway
+CHATKHU_IMAGE_MODEL=gemini-3.1-flash-lite-image
+CHATKHU_VIDEO_MODEL=fal-ai/kling-video/v3
+CHATKHU_TTS_MODEL=gemini-3.1-flash-tts-preview
+```
+
+```bash
+# 기본은 계획 출력만 수행. 키 값 대신 존재 여부만 표시하고 네트워크 미사용.
+python scripts/check_chatkhu.py --kind image
+python scripts/check_chatkhu.py --kind tts
+python scripts/check_chatkhu.py --kind video # 이미지 검토 전이면 대기 안내
+python -m pytest tests/test_chatkhu.py -q    # HTTP 대역; 실제 모델 호출 없음
+```
+
+공식 세부 문서를 확인한 Bearer 인증과 요청/응답만 구현했습니다. 승인된 모델/견적 조회와 이미지1회·영상1회·TTS1회 생성 경로를 검증했습니다. 이 검증에 대한 추가 호출은 승인되지 않았습니다. 다음 명령은 **별도로 승인한 뒤** 사용하세요.
+
+```bash
+# 생성하지 않는 사전 조회: 모델 GET1건 + 공식 무료 견적 POST1건
+python scripts/check_chatkhu.py --kind image --preflight
+# TTS --preflight는 모델 GET1건만. 공식 /estimate는 TTS 미지원.
+
+# 아래는 실제 과금 가능. 모델·본문 해시·비용을 보고 사용자 승인 후에만 실행.
+# REQUEST_HASH는 plan.json의 request_hash. 이 문서만으로 호출이 승인되지는 않음.
+python scripts/check_chatkhu.py --kind image --live \
+  --approval-hash REQUEST_HASH \
+  --quote-file tmp/chatkhu/image/preflight.json --accept-unknown-cost
+```
+
+`--accept-unknown-cost`는 이미지 견적이 minimum이거나 TTS 비용이 미확정인 경우 사용자가 최종 금액 상한 미확정을 다시 승인했을 때만 지정합니다. 크레딧 하드 상한을 강제하는 옵션이 아닙니다. 사전 견적은 같은 요청의 최근1시간 기록만 받습니다. 생성은 종류별 최대1회이며 오류/타임아웃도 시도1회를 소비한 것으로 취급합니다. 자동 재시도·유료 모델 전환·이미지 실패 후 텍스트 영상 자동 대체는 없습니다.
+
+이미지 결과를 검토한 다음 `--kind video --input-image tmp/chatkhu/image/asset-....png`로 영상 계획을 만듭니다. 원본 이미지의 디코딩·크기와 해시까지 승인 범위에 포함합니다. Kling은3초/standard/오디오 제외, Seedance2.0은5초/720p를 사용합니다. 해당 모델 문서에 없는 해상도·말투 필드는 전송하지 않습니다. 영상의 텍스트 전용 검증은 별도로 승인한 `--text-only`만 가능합니다.
+
+비동기 요청은 operation_id를 `pending-operation.json`에 먼저 저장하고 제한 시간 동안 조회합니다. 시간 초과/연결 실패 때 생성 요청을 반복하지 마세요. 같은 모델과 작업 ID로 GET만 재개할 수 있습니다.
+
+```bash
+python scripts/check_chatkhu.py --kind video \
+  --resume tmp/chatkhu/video/pending-operation.json
+```
+
+결과는 `tmp/chatkhu/`에 검증한 로컬 PNG/JPEG/WebP/MP4/WAV와 `result.json`, 시도별 `run-*.json`으로 저장합니다. 재개 기록은 최초 시도 기록을 가리킵니다. `credits_charged`·JSON billing·TTS X-Billing/토큰 헤더의 공식 응답 값만 기록하며 없는 사용량은 unknown으로 둡니다. 폴링 응답에 같은 차감액이 반복될 수 있으므로 이벤트를 합산해 실제 비용으로 표시하지 않습니다. 응답에 포함되지 않은 조직 콘텐츠 검사 비용은 대시보드로 따로 확인해야 합니다.
+
+결과 URL은 렌더러에 전달하지 않습니다. 인라인 이미지는 디코딩하고, 문서의 Gateway 다운로드 경로 또는 허용된 `fal.media` HTTPS CDN에서 인증 정보를 분리해 복사합니다. 다른 호스트·리다이렉트는 자동 접근하지 않습니다. 크기·길이·코덱·전체 디코딩 검사 후 로컬 파일만 반환합니다. CDN URL 수명은 공식 문서에서 확인하지 못했으므로 보장하지 않습니다. 공개된 기본 단가는 계정별 견적이나 최종 비용과 같다고 보장할 수 없습니다.
+
+문서 출처·실제 생성 결과·비교·제약은 [Phase 3-D 기록](docs/PHASE3D_NOTES.md)에 정리했습니다. 이미지 API 보고 차감34.21cr,영상252cr,TTS는 입력76/출력485토큰이며 공식 차감액 미반환입니다. PCM24kHz/mono 한국어 음성19.4초를 검증했습니다. AI 원본의 잘못된 라벨·화살표가 있는 중앙 영역을 제외하고 배경으로만 사용하며, 정확한 과정은 SVG가 표시합니다. 발음·억양의 청취 평가는 별도 필요합니다.
+
+
+### 승인된 파일로 합성하기 · 네트워크 미사용
+
+```bash
+# 같은 주제·30초 명세로 A:SVG, B:이미지+SVG, C:이미지+영상+TTS 비교
+# 기존 승인 결과 result.json과 로컬 파일이 필요. 파일 누락 시 SVG/로컬 음성.
+python scripts/compare_water_cycle.py --output tmp/chatkhu/comparison/new-preview --preview --fps 3
+# 기본 1080×1920, 30fps. 기존 출력은 덮어쓰지 않음.
+python scripts/compare_water_cycle.py --output tmp/chatkhu/comparison/new-full --fps 30
+
+# Gemini /api/storyboard 응답도 같은 StoryboardSpec 입력으로 사용 가능
+python scripts/render_storyboard.py --input tmp/storyboard.json \
+  --media-plan tmp/media-plan.json --asset-root tmp/reviewed-assets \
+  --output tmp/videos/multimodal.mp4 --preview --fps 3
+python -m pytest tests/test_chatkhu.py tests/test_multimodal.py -q
+python tests/browser_multimodal.py
+python tests/browser_rendered_videos.py tmp/chatkhu/comparison/verified-preview
+```
+
+`create_media_plan()`은 명세 해시와 scene_id에 계획을 묶습니다. 모드는 `svg_animation`, `ai_image`, `ai_image_motion`, `ai_video`, `text_motion`이며 수학 그래프·알고리즘은 SVG가 우선입니다. `LocalMedia`에는 파일명·SHA256·검토 상태만 허용합니다. 외부 URL·경로·실행 코드는 받지 않습니다. 운영자 검토가 필요한 계획이므로 LLM의 자체 승인 값을 신뢰해 공개하지 마세요. `propose_visual_requests()`는 기존 Gemini 명세로 일관된 이미지 요청 계획만 만들며 호출하지 않습니다. 이미지 검토 후 영상 요청·견적·승인은 별도로 진행합니다.
+
+동일 자산을 여러 장면·A/B/C에서 해시로 확인해 재사용합니다. 새 합성에는 API 호출0회입니다. 누락·해시 불일치·디코딩 실패·검토 거절·합성 오류는 장면별 SVG 대체 사유로 기록하고, 외부 음성의 원문 해시가 맞지 않거나 길이가 과하면 macOS 음성으로 대체합니다. 시간·디스크·취소 오류는 중단하며 제한을 우회하지 않습니다. 원본 영상 소리는 쓰지 않고 짧은 배경 클립만 반복합니다. 외부 음성 자막은 측정된 길이에 글자 수로 배분한 근사 정렬이며 단어 단위 정렬이 아닙니다. 음성 종료 후 복습 문장을 표시합니다. 실패한 유료 생성 CLI는 오류를 알리고 멈추며, 기존 SVG 생성은 계속 이용할 수 있습니다.
+
+MediaPlan·자산은 worker 임시 폴더로 복사해 기존 시간/디스크/단일 실행/취소 정책 안에서 처리합니다. 미디어당100MiB·복사 합계256MiB, 원본 이미지/영상4096px·영상60초·외부 음성120초 상한이며 worker에 API 키를 전달하지 않습니다. 물의 순환 `requires_mask` 결과는 검토한 상단30%·하단20%만 합성하고 중앙을 제외합니다. 다른 자산에 이 크롭이 안전하다고 자동 판정하지 않습니다.
 
 기존 랜딩·수학·사회 데모를 유지하고 FastAPI에 **자료 업로드 → 질문 → 학습 방식 → JSON 학습 명세 → 인터랙티브 학습**을 연결했습니다.
 
@@ -344,7 +420,7 @@ python -m pytest -q
 node --check frontend/static/workflow.js
 ```
 
-일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 현재 전체206개가 통과했습니다. 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경과 렌더링·작업 정책을 확인합니다. 일부 프로세스 제어 테스트는 무해한 실제 대역 프로세스를 생성·종료하며 Chrome/TTS/MP4를 실행하지 않습니다.
+일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 현재 전체278개가 통과했습니다(기존206 + ChatKHU45 + 멀티모달27). 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경과 렌더링·작업 정책을 확인합니다. 일부 프로세스 제어 테스트는 무해한 실제 대역 프로세스를 생성·종료합니다. ChatKHU 검사는 합성 PNG/PCM 파일의 로컬 디코딩만 수행하며 실제 모델·Chrome·TTS 합성·MP4 생성은 실행하지 않습니다.
 
 Phase 3-A의155개에 Phase 3-B의 렌더링 정책·음성 길이·시간/디스크 제한·실패 정리·키 상속 방지 검사를 추가했습니다. 실제 브라우저·TTS·MP4 검증은 위 명시적 명령으로 분리하며 일반 pytest에서 실행하지 않습니다.
 
@@ -379,6 +455,7 @@ backend/app/
     base.py, __init__.py     공통 계약·Provider 선택
     mock.py                 고정 예제
     gemini.py               Google generateContent
+    chatkhu/                별도 승인형 이미지·영상·TTS Provider와 로컬 미디어 검증
     elice.py                네트워크 없는 준비 구현체
   schemas.py                학습 명세·수학·인용 검증
   storyboard_schema.py     별도 범용 영상 DSL·시간·참조 검증
