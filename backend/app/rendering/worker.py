@@ -141,7 +141,11 @@ if __name__ == "__main__":
             raise SystemExit(1)
         watch_parent(expected_parent)
         options = RenderOptions(**json.loads((work / "options.json").read_text()))
-        render(work, options)
+        if (work / "renderer.json").exists():
+            from .remotion import render as render_remotion
+            render_remotion(work, options)
+        else:
+            render(work, options)
     except RenderError as exc:
         (work / "error.json").write_text(json.dumps(exc.as_dict(), ensure_ascii=False))
         raise SystemExit(1)

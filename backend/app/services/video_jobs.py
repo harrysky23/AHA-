@@ -3,6 +3,7 @@ import asyncio
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 import fcntl
 import hashlib
 import hmac
@@ -47,6 +48,8 @@ class Job:
 
 class VideoJobs:
     def __init__(self, policy: VideoSettings, *, generate=create_storyboard, render=render_storyboard, clock=time.time):
+        if render is render_storyboard and policy.renderer == "remotion":
+            render=partial(render_storyboard,renderer="remotion")
         self.policy, self.generate, self.render, self.clock = policy, generate, render, clock
         self.jobs: dict[str, Job] = {}
         self.queue = deque()

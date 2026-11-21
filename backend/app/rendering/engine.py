@@ -1,5 +1,5 @@
 """Synchronous render entry point; one local job, bounded disposable worker."""
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from dataclasses import asdict
 import fcntl
 import json
@@ -56,7 +56,8 @@ def _stop(process):
 
 def render_storyboard(value, output: Path, options: RenderOptions | None = None, *,
                       cancel_event: Event | None = None, on_progress: Callable[[dict], None] | None = None,
-                      media_plan=None, asset_root: Path | None = None) -> dict:
+                      media_plan=None, asset_root: Path | None = None,
+                      renderer: str = "svg", animation_plan=None, audit: bool = False) -> dict:
     """Render a validated spec to a local file. Never reads .env or calls AI.
 
     No source-grounding claim: quote matching belongs to the generation service
@@ -64,6 +65,19 @@ def render_storyboard(value, output: Path, options: RenderOptions | None = None,
     """
     spec = validate_spec(value)
     options = options or RenderOptions()
+    if renderer not in {"svg","remotion"}:
+        raise RenderError("invalid_renderer", "지원하는 렌더러는 svg 또는 remotion이에요.")
+    if type(audit) is not bool or (audit and renderer!="remotion"):
+        raise RenderError("invalid_renderer", "프레임 감사는 Remotion에서만 사용할 수 있어요.")
+    animation = None
+    if animation_plan is not None:
+        try:
+            from ..remotion_schema import RemotionPlan
+            animation = RemotionPlan.model_validate(animation_plan.model_dump() if isinstance(animation_plan,RemotionPlan) else animation_plan).bind(spec)
+            if renderer != "remotion":
+                raise ValueError()
+        except (ValueError,TypeError,ValidationError):
+            raise RenderError("invalid_animation_plan", "장면·자막 타이밍과 원본 명세를 확인해 주세요.") from None
     plan = None
     if media_plan is not None:
         from .multimodal import parse_media_plan
@@ -82,11 +96,22 @@ def render_storyboard(value, output: Path, options: RenderOptions | None = None,
     executable("ffprobe")
     with render_slot():
         output.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix=".aha-render-", dir=output.parent) as directory:
+        with tempfile.TemporaryDirectory(prefix=".aha-render-", dir=output.parent) as directory, ExitStack() as runtime:
             work = Path(directory)
             budget = Budget(work, options)
             (work / "input.json").write_text(spec.model_dump_json(), encoding="utf-8")
             (work / "options.json").write_text(json.dumps(asdict(options)), encoding="utf-8")
+            if renderer == "remotion":
+                (work / "renderer.json").write_text(json.dumps({"renderer":"remotion"}))
+                # Webpack treats ! as loader syntax, including in absolute paths.
+                # Parent owns this lexical view and removes it AFTER reaping the
+                # worker. Actual output/profile bytes remain inside the budget.
+                alias=Path(runtime.enter_context(tempfile.TemporaryDirectory(prefix="aha-remotion-",dir="/private/tmp" if Path("/private/tmp").is_dir() else "/tmp")))
+                (alias/"project").symlink_to(ROOT/"video-remotion",target_is_directory=True)
+                (alias/"work").symlink_to(work,target_is_directory=True)
+                (work/"remotion-runtime.json").write_text(json.dumps({"project":str(alias/"project"),"work":str(alias/"work"),"audit":audit}))
+            if animation is not None:
+                (work / "animation-plan.json").write_text(animation.model_dump_json())
             if plan is not None:
                 from .multimodal import stage_media
                 stage_media(plan,asset_root,work,budget,cancel_event)

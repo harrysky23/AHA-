@@ -6,3 +6,6 @@ __pycache__/
 !.env.example
 tmp/
 .DS_Store
+node_modules/
+video-remotion/dist/
+video-remotion/public/generated/

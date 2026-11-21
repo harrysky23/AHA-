@@ -141,3 +141,13 @@ def test_polling_accounting_is_not_summed_or_erased_by_null():
     assert official_accounting([{"credits_charged":252.},{"credits_charged":252.},{"credits_charged":None}])["credits_charged"]==252.
     assert official_accounting([{"credits_charged":None,"input_tokens":76}])=={
         "credits_charged":None,"input_tokens":76,"output_tokens":None}
+
+
+def test_reused_voice_skips_even_unit_tempo_processing(tmp_path,monkeypatch):
+    value=spec();p=create_media_plan(value,[asset("audio")],{},narration_id="audio")
+    commands=[]
+    monkeypatch.setattr(media,"run_process",lambda command,*args,**kwargs:commands.append(command))
+    result,reason=media.external_narration(value,p,tmp_path,Budget(tmp_path,RenderOptions()),
+        {"audio":{"duration_seconds":19.4}}, {},preserve_waveform=True)
+    assert reason is None and result["tempo"]==1
+    assert not any("atempo=" in arg for arg in commands[0])

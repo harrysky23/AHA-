@@ -7,7 +7,8 @@
 - Phase 3-A: separate generic storyboard DSL/API implemented with mock and Gemini HTTP-double tests. See `PHASE3A_NOTES.md` and `STORYBOARD_DSL.md`. Actual storyboard API calls, video rendering, TTS and MP4 storage have not been tested/implemented in this phase.
 - Phase 3-B: local rendering engine/CLI with six HTML/SVG renderers, network-denied Playwright capture, macOS Korean TTS, FFmpeg encode/probe/decode, concurrency/time/disk limits and failure cleanup. See `PHASE3B_NOTES.md` for actual MP4 evidence. No rendering-job API or UI is added.
 - Phase 3-C: implemented bounded single-runner web queue/API/UI, session ownership, Range streaming/download, acknowledged process cancellation, TTL/storage cleanup and reload recovery. See `PHASE3C_NOTES.md` for mock-AI/real-MP4 browser evidence. One server process; restart discards old web jobs/files.
-- Phase 3-D checkpoint: three ChatKHU media providers/approval CLI passed HTTP-double tests. Approved image1/video1 generated and decoded (API-reported34.21/252credits); video playback passed. Unwanted arrows and hallucinated video labels fail direct educational use. TTS generation, multimodal scene integration and safe composition remain pending. See `PHASE3D_NOTES.md`.
+- Phase 3-D: approved image1/video1/TTS1, separate media plan, safe cropped backgrounds, SVG overlays and A/B/C MP4 comparison implemented. Original AI labels/arrows are excluded; no automatic paid media calls. See `PHASE3D_NOTES.md`.
+- Remotion: additional React/TypeScript rendering path with a six-stage water-cycle animation, existing image/WAV reuse, validated timing JSON and the existing bounded async job system. Default remains SVG; opt in with AHA_VIDEO_RENDERER=remotion. See `REMOTION_NOTES.md` for actual rendering/playback/cancellation evidence.
 - See `PHASE2_NOTES.md` and README for earlier real-call evidence, free-tier/age/data-use limitations and setup.
 
 ## Phase 0 — repository inspection

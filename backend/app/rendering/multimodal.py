@@ -94,7 +94,7 @@ def resolve_scenes(spec, plan, failed):
     return entries, fallbacks
 
 
-def external_narration(spec, plan, work, budget, metadata, failed):
+def external_narration(spec, plan, work, budget, metadata, failed, *, preserve_waveform=False):
     if not plan.narration:
         return None, None
     request = plan.narration
@@ -107,8 +107,9 @@ def external_narration(spec, plan, work, budget, metadata, failed):
         duration = metadata[asset.id]["duration_seconds"]
         ratio = fit_ratio(duration, spec.duration_seconds)
         output = work / "narration.wav"
+        tempo_filter="" if preserve_waveform and ratio==1 else f"atempo={ratio:.8f},"
         run_process([executable("ffmpeg"),"-nostdin","-v","error","-y","-protocol_whitelist","file,pipe",
-            "-i",str(work/"assets"/asset.filename),"-af",f"atempo={ratio:.8f},apad,atrim=duration={spec.duration_seconds},asetpts=PTS-STARTPTS",
+            "-i",str(work/"assets"/asset.filename),"-af",f"{tempo_filter}apad,atrim=duration={spec.duration_seconds},asetpts=PTS-STARTPTS",
             "-ar","48000","-ac","1","-c:a","pcm_s16le",str(output)],budget,"audio_fit_failed")
         return {"path":output,"spoken_seconds":duration/ratio,"tempo":ratio,"source":"approved_local_chatkhu_wav"}, None
     except RenderError as exc:

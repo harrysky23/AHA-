@@ -1,0 +1,23 @@
+{
+  "source_audio_sha256": "07842ba299144d56754b8308bf2ae0e68aab85756319b23356051aa9dbeac26a",
+  "timing_note": "기존 WAV의 무음 구간을 참고해 원문 절에 배정한 조정 가능한 큐. ASR/음소 강제 정렬 결과가 아님. 오디오 1초 지연.",
+  "audio_offset_seconds": 1.0,
+  "scenes": [
+    {"id":"intro","type":"introduction","start_seconds":0.0,"end_seconds":1.25,"title":"물은 돌고 돌아요","explanation":"태양과 물, 순환으로 연결해요."},
+    {"id":"evaporation","type":"evaporation","start_seconds":1.25,"end_seconds":7.25,"title":"태양 에너지로 증발해요","explanation":"바다의 물 일부가 수증기가 되어 공기 중으로 이동해요."},
+    {"id":"condensation","type":"condensation","start_seconds":7.25,"end_seconds":13.8,"title":"수증기가 식으면?","explanation":"작은 물방울이나 얼음 입자가 생겨 구름을 이룰 수 있어요."},
+    {"id":"precipitation","type":"precipitation","start_seconds":13.8,"end_seconds":16.5,"title":"비나 눈으로 내려와요","explanation":"구름의 물방울·얼음 입자가 강수로 내려와요."},
+    {"id":"collection","type":"collection","start_seconds":16.5,"end_seconds":20.4,"title":"강을 거쳐 다시 바다로","explanation":"내려온 물은 땅과 강을 거쳐 바다로 모여요."},
+    {"id":"review","type":"overview","start_seconds":20.4,"end_seconds":30.0,"title":"네 과정을 연결해 보세요","explanation":"증발 → 응결 → 강수 → 유출·집수. 물은 계속 순환해요."}
+  ],
+  "captions": [
+    {"start_seconds":1.27,"end_seconds":4.1,"text":"태양 에너지를 받은 바다의 물 일부는"},
+    {"start_seconds":4.1,"end_seconds":7.25,"text":"수증기가 되어 공기 중으로 이동해요."},
+    {"start_seconds":7.25,"end_seconds":8.7,"text":"수증기가 식으면"},
+    {"start_seconds":8.7,"end_seconds":11.6,"text":"작은 물방울이나 얼음 입자가 생기고,"},
+    {"start_seconds":11.6,"end_seconds":13.8,"text":"구름을 이룰 수 있어요."},
+    {"start_seconds":13.8,"end_seconds":16.5,"text":"구름의 물은 비나 눈으로 내려와"},
+    {"start_seconds":16.5,"end_seconds":18.0,"text":"땅과 강을 거쳐"},
+    {"start_seconds":18.0,"end_seconds":20.4,"text":"다시 바다로 모이며 순환해요."}
+  ]
+}

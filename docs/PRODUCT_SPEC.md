@@ -32,6 +32,8 @@ Turn the student's study material and difficult concept into a personalized, vis
 - No assumption of a dedicated Elice video API. Consider local deterministic animations and optional TTS providers; expose costs and dependencies before adding them.
 - Experimental Phase 3-D uses separate ChatKHU image/video/TTS providers, keeping Gemini for learning text/storyboards. Approved image1/video1 passed file decoding, but embedded arrows and hallucinated video labels require masking/cropping and prevent direct educational use. One approved TTS generation produced a19.4s Korean PCM recording; a separate hashed local-media plan now composes reviewed crops, SVG and captions through the bounded renderer. A/B/C preview outputs passed decoding/playback; full-size comparison is recorded in PHASE3D_NOTES. Existing web output remains the local SVG/TTS path; paid generation remains an explicitly approved operator action.
 
+- Remotion adds an optional React/TypeScript composition engine, with water-cycle particle/cloud/rain/runoff animation and a safe text template for other concepts. It reuses validated storyboard data, reviewed local images and original speech. Explicit timing cues are separate from the original DSL; SVG remains the default renderer and HTML learning is unchanged. See `REMOTION_NOTES.md`.
+
 ## Visual design and existing prototype
 Use the supplied `아하! v3.html` as the authoritative visual baseline. Preserve existing math and supply-demand interactive demos and their embedded media where possible. Add functional input/output screens without disrupting the existing landing experience.
 

@@ -1,4 +1,79 @@
-# AHA! (아하!) · Phase 3-D
+# AHA! (아하!) · Remotion 렌더러 추가
+
+
+## Remotion · 물의 순환 모션그래픽
+
+기존 FFmpeg 렌더러와 별도로 React/TypeScript + **Remotion4.0.545** 경로를 추가했습니다. 기존 이미지·19.4초 한국어 TTS를 재사용해 증발 입자 상승 → 응결·구름 형성 → 강수 → 하천 이동 → 전체 순환을 프레임 기반으로 표시합니다. 기본 출력1080×1920/30fps/H.264+AAC, 프리뷰540×960입니다. 외부 AI 호출은 없습니다.
+
+이번 로컬 결과는 `tmp/remotion/release/water-cycle.mp4`, 원본 복사본은 `C-original.mp4`, 나란히 보는 페이지는 `comparison.html`입니다. 원본 `tmp/chatkhu/comparison/verified-full/C.mp4`도 보존했습니다. 최종30초 영상 생성·전체 디코딩·Chrome 재생을 확인했습니다. 한국어 글꼴은 기존 macOS Apple SD Gothic Neo를 사용하고 원격 글꼴을 다운로드하지 않습니다.
+
+```bash
+# 프로젝트 루트에서. Python·Chrome·FFmpeg/macOS TTS는 기존 설치를 재사용.
+npm --prefix video-remotion ci --ignore-scripts --no-audit --no-fund
+npm --prefix video-remotion run typecheck
+npm --prefix video-remotion test
+
+# 승인된 기존 C 명세·이미지·WAV가 있는 이 작업 공간에서 재구현
+# 출력이 이미 있으면 다른 디렉터리 지정. API 호출/새 TTS 생성 없음.
+.venv/bin/python scripts/render_remotion.py --preview --fps 3 \
+  --output tmp/remotion/my-preview/water-cycle.mp4
+.venv/bin/python scripts/render_remotion.py --audit \
+  --output tmp/remotion/my-final/water-cycle.mp4
+
+# 기존 자산 없이도 가능한 일반 mock + macOS TTS 경로
+.venv/bin/python scripts/render_storyboard.py --mock science --duration 30 \
+  --renderer remotion --preview --fps 3 --output tmp/remotion/mock.mp4
+# 기존 SVG/FFmpeg 경로는 그대로
+.venv/bin/python scripts/render_storyboard.py --mock science --duration 30 \
+  --renderer svg --preview --fps 3 --output tmp/remotion/svg.mp4
+```
+
+기존 `StoryboardSpec`과 별도로 `remotion-plan-1`에 허용된 장면 유형·제목·설명·시간·자막을 둡니다. `video-remotion/examples/water-cycle-cues.json`의 장면 시간·표시 문장을 수정하면 다음 렌더에 반영됩니다. 자막은 원본 내레이션과 일치해야 하며, 검토 큐는 원본 WAV SHA256에 묶입니다. 원본 음성에 없는 새 말을 자동으로 생성하지 않습니다. 예제는1초 도입 후 기존 WAV를 재생하고20.4초부터 복습합니다. 무음 구간을 참고해 절에 배정한 편집 가능한 큐이며, 자동 음소·단어 정렬이나 청취 검증으로 표시하지 않습니다.
+
+일반 JSON 자동 렌더링은 기존 API 응답/StoryboardSpec + 선택적 MediaPlan/RemotionPlan을 받습니다.
+
+```bash
+.venv/bin/python scripts/render_storyboard.py --input tmp/storyboard.json \
+  --renderer remotion --media-plan tmp/media-plan.json \
+  --asset-root tmp/reviewed-assets --animation-plan tmp/animation-plan.json \
+  --output tmp/remotion/custom.mp4
+```
+
+현재 Remotion 개념 애니메이션은 물의 순환에 한정합니다. 다른 개념·미지원 장면은 텍스트 템플릿으로 대체하고 기록합니다. 기존6종 SVG DSL은 기존 렌더러에서 계속 지원합니다. 장면 길이·자막 겹침·원문/명세/음성 해시를 검증하고 임의 코드·외부 미디어 URL을 실행하지 않습니다. 새 경로도 기존 단일 실행 잠금·worker/자식 종료·시간/용량 제한·임시파일 정리·MP4 검사를 공유합니다. 실제 진행 프레임 수를 기존 웹 UI에 전달합니다.
+
+### Studio 미리보기
+
+```bash
+.venv/bin/python scripts/render_remotion.py --prepare-studio \
+  --output tmp/remotion/studio/water-cycle.mp4
+npm --prefix video-remotion run studio -- --props ../tmp/remotion/studio/studio-props.json
+# 표시된 localhost:3100에서 확인. 종료 Ctrl+C.
+```
+
+`--prepare-studio`는 검토된 예제 배경·음성을 `video-remotion/public/generated/`로 복사합니다. 이 폴더와 tmp는 Git에서 제외됩니다. Studio는 개발 서버이므로 민감한 학생 자료를 복사하지 마세요. 생성된 `--props` 파일을 수정하거나 cue JSON으로 다시 준비합니다. 이 입력은 Studio의 기본 props보다 우선합니다. `AHA!`의 느낌표가 Webpack과 충돌하므로 래퍼는 예약 문자가 없는 임시 별칭을 사용합니다. 원본 프로젝트명은 바꾸지 않습니다.
+
+### 기존 웹 API에서 사용
+
+```bash
+# .env를 직접 바꾸지 않고 해당 서버 프로세스에만 선택 적용
+AHA_AI_PROVIDER=mock AHA_VIDEO_RENDERER=remotion \
+AHA_VIDEO_PREVIEW=true AHA_VIDEO_FPS=3 \
+.venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8766 --workers 1 --no-access-log
+```
+
+`POST /api/videos`와 기존 폼·상태·취소·소유권·Range 재생 API를 그대로 사용합니다. 웹 입력은 기존 자료 분석/스토리보드와 macOS TTS를 사용하며, 운영자 검토 자산을 자동으로 선택하거나 새 ChatKHU 미디어를 호출하지 않습니다. 기본 `AHA_VIDEO_RENDERER=svg`이며 서버 재시작으로 선택을 변경합니다. Gemini를 선택하면 기존 동의·자료 전송·API 사용량 정책은 적용됩니다.
+
+### 검증과 라이선스
+
+```bash
+.venv/bin/python -m pytest -q
+.venv/bin/python tests/check_remotion_output.py tmp/remotion/release
+.venv/bin/python tests/browser_rendered_videos.py tmp/remotion/release
+# 위 mock/Remotion 서버에서 실제 웹 생성·취소 검사
+AHA_BASE_URL=http://127.0.0.1:8766 .venv/bin/python tests/browser_phase3c.py
+```
+
+Remotion4.0.545, React19.2.4, TypeScript5.9.3을 package-lock으로 고정했습니다. Remotion은 일반 MIT 라이브러리로 간주하면 안 됩니다. 설치된 LICENSE와 [공식 조건](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md)은 개인·3인 이하 영리 조직·비영리 조직·비상업적 도입 평가 등에 무료 자격을 부여합니다. 자격 밖의 운영에는 Company License가 필요합니다. 이번 구현은 로컬 도입 평가이며 자동 구매·과금 등록을 하지 않았습니다. 실제 조직·상업 서비스 적용 전 해당 조건을 확인해야 합니다. [공식 렌더링 문서](https://www.remotion.dev/docs/renderer/render-frames), [개발 기록과 실제 비교](docs/REMOTION_NOTES.md).
 
 ## Phase 3-D · 승인형 멀티모달 영상 합성
 
@@ -420,7 +495,7 @@ python -m pytest -q
 node --check frontend/static/workflow.js
 ```
 
-일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 현재 전체278개가 통과했습니다(기존206 + ChatKHU45 + 멀티모달27). 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경과 렌더링·작업 정책을 확인합니다. 일부 프로세스 제어 테스트는 무해한 실제 대역 프로세스를 생성·종료합니다. ChatKHU 검사는 합성 PNG/PCM 파일의 로컬 디코딩만 수행하며 실제 모델·Chrome·TTS 합성·MP4 생성은 실행하지 않습니다.
+일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 현재 전체294개가 통과했습니다(기존206 + ChatKHU45 + 멀티모달28 + Remotion15). 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경과 렌더링·작업 정책을 확인합니다. 일부 프로세스 제어 테스트는 무해한 실제 대역 프로세스를 생성·종료합니다. ChatKHU 검사는 합성 PNG/PCM 파일의 로컬 디코딩만 수행하며 실제 모델·Chrome·TTS 합성·MP4 생성은 실행하지 않습니다.
 
 Phase 3-A의155개에 Phase 3-B의 렌더링 정책·음성 길이·시간/디스크 제한·실패 정리·키 상속 방지 검사를 추가했습니다. 실제 브라우저·TTS·MP4 검증은 위 명시적 명령으로 분리하며 일반 pytest에서 실행하지 않습니다.
 
