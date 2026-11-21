@@ -8,6 +8,7 @@ import pytest
 
 from backend.app.main import MAX_BODY_BYTES, app
 from backend.app.routes.learn import MAX_FILE_BYTES
+from pdf_fixture import pdf_bytes
 
 client = TestClient(app)
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=')
@@ -19,7 +20,8 @@ def learn(**fields):
 
 
 def test_health_and_reference_preservation():
-    assert client.get('/api/health').json() == {'status': 'ok', 'mode': 'local_demo', 'external_ai': False}
+    health = client.get('/api/health').json()
+    assert health['mode'] == 'mock' and health['external_ai'] is False
     reference = next(Path('references').glob('*.html'))
     assert hashlib.sha256(reference.read_bytes()).hexdigest() == '63cccf869c0c75aedffc12fbe00cc7fb7c5be30210372c076f97261167f0e2b1'
     index = client.get('/')
@@ -38,7 +40,7 @@ def test_deterministic_html_and_isolated_viewer():
     assert data['grounding']['status'] == 'no_material'
     assert data['lesson']['tangent_slope'] == 2
     assert data['video'] is None
-    assert data == learn(concept='미분계수', question='왜 2인가요?', format='html').json()
+    assert data['lesson']['spec'] == learn(concept='미분계수', question='왜 2인가요?', format='html').json()['lesson']['spec']
     lesson = client.get(data['lesson']['viewer_url'])
     policy = lesson.headers['Content-Security-Policy']
     assert "sandbox allow-scripts" in policy
@@ -50,14 +52,15 @@ def test_deterministic_html_and_isolated_viewer():
 
 
 @pytest.mark.parametrize('filename,mime,content', [
-    ('필기.png','image/png',PNG), ('교재.pdf','application/pdf',b'%PDF-1.4\n%%EOF'),
+    ('필기.png','image/png',PNG), ('교재.pdf','application/pdf',pdf_bytes()),
     ('사진.jpg','image/jpeg',b'\xff\xd8\xff\xe0'), ('사진.webp','image/webp',b'RIFF\x00\x00\x00\x00WEBP'),
 ])
 def test_upload_is_acknowledged_but_not_analyzed(filename,mime,content):
     response = client.post('/api/learn', data={'concept':'미분계수','format':'html'}, files={'file':(filename,content,mime)})
     assert response.status_code == 200
-    assert response.json()['material'] == {'filename':filename,'size_bytes':len(content),'content_type':mime,'analyzed':False}
-    assert response.json()['grounding']['status'] == 'not_analyzed'
+    material = response.json()['material']
+    assert material['filename'] == filename and material['size_bytes'] == len(content) and material['analyzed'] is False
+    assert response.json()['grounding']['status'] == ('text_extracted' if mime == 'application/pdf' else 'image_unsupported')
 
 
 def test_shorts_is_explicitly_an_existing_sample():
@@ -113,5 +116,5 @@ def test_reject_multiple_files_and_duplicate_fields():
 
 
 def test_upload_filename_is_only_a_name():
-    response=client.post('/api/learn',data={'question':'미분','format':'html'},files={'file':('../../secret.pdf',b'%PDF-1.4','application/pdf')})
+    response=client.post('/api/learn',data={'question':'미분','format':'html'},files={'file':('../../secret.pdf',pdf_bytes(),'application/pdf')})
     assert response.json()['material']['filename'] == 'secret.pdf'

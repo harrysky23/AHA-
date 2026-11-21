@@ -1,139 +1,216 @@
-# AHA! (아하!) · Phase 1
+# AHA! (아하!) · Gemini 기반 Phase 2
 
-한국 고등학생을 위한 개념 학습 도우미의 로컬 PoC입니다. 기존 랜딩·수학·사회 데모를 유지하고, **자료 업로드 → 개념·질문 입력 → 학습 방식 선택 → 결과 학습**을 FastAPI에 연결했습니다.
+기존 랜딩·수학·사회 데모를 유지하고 FastAPI에 **자료 업로드 → 질문 → 학습 방식 → JSON 학습 명세 → 인터랙티브 학습**을 연결했습니다.
 
-현재는 **AI 생성이 아닌 수학 II 고정 예제**입니다. API 키, 유료 서비스, 외부 AI 호출 없이 실행합니다.
+지원 개념은 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수**입니다. AI는 설명·수준·예제·확인 문제를 JSON으로 만들고, 검증된 로컬 HTML/JS 컴포넌트가 그래프를 계산합니다. AI가 만든 JavaScript는 실행하지 않습니다. 새 숏츠·TTS·영상 생성(Phase 3)은 구현하지 않았습니다.
+
+## 현재 Provider
+
+| 값 | 동작 |
+| --- | --- |
+| `mock` | 질문에 관계없이 기존 수학 II 고정 예제. 키·외부 호출 없이 작동 |
+| `gemini` | Gemini Developer API의 실제 `generateContent` 호출. 질문·추출 텍스트로 JSON 명세 생성 |
+| `elice` | 별도 준비 구현체. 실제 사양 확정 전에는 네트워크 호출 없이 연결 예정 오류 반환 |
+
+기본 모델은 **`gemini-3.5-flash-lite`**이며 `GEMINI_MODEL`로 바꿀 수 있습니다. 실제 생성 2건과 FastAPI·PDF·그래프·캐시 재사용을 검증했습니다. 처음 지정했던 2.5 모델의 404와 3.5의 일시적 503도 기록했습니다. 상세 결과는 [Phase 2 기록](docs/PHASE2_NOTES.md)을 참조하세요. HTTP 대역 테스트는 실제 AI 생성 성공으로 계산하지 않습니다.
 
 ## 로컬 실행
 
-Python 3.11 이상을 권장합니다. 이번 작업에서는 macOS / Python 3.13 / Chrome으로 검증했습니다.
-
-프로젝트 루트에서:
+Python **3.11 이상**. 이번 검증 환경은 macOS / Python 3.13 / Chrome입니다.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r backend/requirements.txt
+# .env가 없는 최초 설정 때만 실행:
+cp .env.example .env
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765
 ```
 
-브라우저에서 **http://127.0.0.1:8765** 를 엽니다. 포트를 바꾸어도 프론트엔드는 같은 서버의 상대 경로로 연결됩니다. HTML 파일을 직접 여는 대신 FastAPI 주소로 접속하세요.
+이미 키가 있는 `.env`는 복사 명령으로 덮어쓰지 마세요. 현재 로컬 설정에는 사용자 키를 보존하고 Gemini Provider와 3.5 모델을 지정했습니다.
+
+**http://127.0.0.1:8765** 에 접속합니다. 파일을 직접 열지 말고 서버 주소를 사용하세요.
 
 1. **내 자료로 시작하기**를 누릅니다.
-2. PDF 또는 이미지 1개를 선택합니다. 자료 없이 질문만 입력해도 됩니다.
-3. **예시 질문 채우기**를 누르거나 개념·질문 중 하나를 입력합니다.
-4. **인터랙티브 학습 → 학습 결과 열기**를 누릅니다.
-5. h를 조절하고 0.1, 0.01, 0.0001, −0.1, 0 버튼으로 기울기를 비교합니다.
-6. **숏츠 학습**을 선택하면 기존 80.43초 가로형 예시 영상을 봅니다. 새 영상 생성은 하지 않습니다.
+2. 선택적으로 5 MiB 이하의 텍스트 PDF를 올립니다.
+3. 미분계수 개념과 질문을 입력하고 인터랙티브 학습을 선택합니다.
+4. Gemini 모드에서는 전송 안내를 확인합니다.
+5. 설명·그래프·예제·확인 문제를 학습합니다. 같은 입력을 다시 제출하면 캐시를 재사용합니다.
+6. 실패하면 오류를 확인하고 **기본 수학 예제 바로 열기**로 전환합니다.
 
-## 구현 범위
+Gemini가 실패해도 기존 수학·사회 데모·기존 영상은 이용할 수 있습니다. 서버 프로세스 자체가 중단되면 정적 뷰어도 열리지 않습니다.
 
-| 기능 | 현재 동작 |
-| --- | --- |
-| 자료 업로드 | PDF, PNG, JPEG, WebP 1개 / 최대 5 MiB. 확장자·MIME·파일 시작 서명 검사 |
-| 개념·질문 | 개념 200자 / 질문 2,000자. 둘 중 하나 필수. 결과에 원문 표시 |
-| 수학 결과 | 입력에 관계없이 f(x)=x², a=1인 로컬 템플릿 |
-| 인터랙션 | 양수·음수 h, 할선·접선·두 점·변화량·기울기 차이 표시 |
-| h=0 | 할선 기울기를 정의하지 않고 접선만 표시. 극한과 대입을 구분 |
-| 숏츠 선택 | 원본 시안의 MP4 제공. 새 9:16 숏츠 생성 아님 |
-| 오류 처리 | 파일·필드 검증, 중복 제출 방지, 로딩, 12초 타임아웃, 재시도 |
-| 기본 예제 | API 오류·연결 실패 시 버튼으로 동일한 로컬 수학 템플릿 열기 |
+## 환경 변수와 키
 
-PDF 텍스트 추출, OCR, 업로드 자료 기반 개인화, 외부 AI, TTS, 신규 MP4 렌더링·내보내기, 후속 질문, 저작권 자동 검토는 구현하지 않았습니다. 파일 서명 검사는 문서 전체의 유효성이나 안전성을 검증하는 기능이 아닙니다. 큰 발표용 PDF(약 32MB)는 업로드 제한에 걸리므로 실제 체험에는 5 MiB 이하의 교재 PDF나 필기 이미지를 사용하세요.
-
-## API
-
-`GET /api/health`
-
-```json
-{"status":"ok","mode":"local_demo","external_ai":false}
+```dotenv
+AHA_AI_PROVIDER=gemini
+GEMINI_API_KEY=발급받은_실제_키
+GEMINI_MODEL=gemini-3.5-flash-lite
+GEMINI_MAX_OUTPUT_TOKENS=4096
+AI_TIMEOUT_SECONDS=45
+AHA_CACHE_TTL_SECONDS=300
+AHA_CACHE_MAX_ENTRIES=64
 ```
 
-`POST /api/learn` — `multipart/form-data`
-
-| 필드 | 값 |
+| 항목 | 의미 |
 | --- | --- |
-| `file` | 선택, 파일 1개 |
-| `concept` | 선택, 최대 200자 |
-| `question` | 선택, 최대 2,000자. concept 또는 question 중 하나 필요 |
-| `format` | 필수, `html` 또는 `shorts` |
+| `AHA_AI_PROVIDER` | mock / gemini / elice. `.env.example`은 안전한 로컬 체험을 위해 mock |
+| `GEMINI_API_KEY` | Google AI Studio의 Gemini Developer API 키. 서버에서만 사용 |
+| `GEMINI_MODEL` | 공식 모델 ID. 기본 3.5 Flash-Lite. 자동 모델 전환 없음 |
+| `GEMINI_MAX_OUTPUT_TOKENS` | 출력 한도, 기본 4096 / 500–8192 |
+| `AI_TIMEOUT_SECONDS` | 모델 전체 제한 시간, 기본 45 / 1–90초 |
+| `AHA_CACHE_TTL_SECONDS` | 결과 재사용 유효 시간, 기본 300 / 0–3600초. 0은 캐시 비활성화·기존 항목 제거 |
+| `AHA_CACHE_MAX_ENTRIES` | 프로세스별 최대 캐시 항목, 기본 64 / 1–128 |
+
+환경 변수는 같은 이름의 `.env` 값을 덮어씁니다. 기존 `AHA_AI_MODE`는 호환 별칭이며 새 설정과 충돌하면 오류를 냅니다. 두 항목 중 하나만 사용하는 것을 권장합니다. 서버는 요청마다 설정을 읽으므로 `.env` 설정 변경 후 화면을 새로고침하세요. 코드 변경은 서버를 재시작해야 합니다.
+
+키는 `x-goog-api-key` 헤더에 넣고 URL 쿼리·프론트엔드·응답·일반 로그에 넣지 않습니다. `.env`는 Git에서 제외하며 정적 파일로 제공하지 않습니다. 현재 로컬 파일 권한은 600입니다.
+
+```bash
+git check-ignore .env
+# 아래 명령의 출력에는 .env가 없어야 합니다.
+git ls-files .env
+```
+
+프론트엔드 변수나 GitHub에 키를 복사하지 마세요. 키가 노출됐다면 AI Studio에서 폐기·재발급해야 합니다. 이 프로젝트는 Elice 키를 소비하거나 호출하지 않습니다.
+
+## 공식 Gemini 호출 방식
+
+[공식 generateContent 문서](https://ai.google.dev/api/generate-content)에 따라 다음 REST 규격을 사용합니다.
+
+- `POST https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent`
+- 인증: `x-goog-api-key`
+- 입력: `systemInstruction`, `contents[].parts[].text`
+- 출력 설정: `generationConfig.responseMimeType=application/json`, `responseJsonSchema`, `maxOutputTokens`
+- 응답: `candidates[].content.parts[].text`, `finishReason`, `usageMetadata`
+
+불필요한 SDK를 추가하지 않고 기존 httpx를 재사용합니다. 모델 ID는 경로·쿼리를 삽입할 수 없도록 검증하고 API 호스트는 고정합니다. 도구·코드 실행·검색·파일 업로드 API는 연결하지 않습니다.
+
+Gemini에는 문서화된 JSON Schema 부분집합만 전달하고 길이·h 간격·수학·인용 조건은 서버 Pydantic 검증으로 다시 확인합니다. 스키마 지원 자체가 설명의 의미적 정확성을 보장하지 않습니다.
+
+공식 자료: [모델](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite), [JSON 출력](https://ai.google.dev/gemini-api/docs/structured-output), [가격표](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite), [요청 한도](https://ai.google.dev/gemini-api/docs/rate-limits), [모델 목록 API](https://ai.google.dev/api/models).
+
+## 무료 티어 사용 시 주의사항
+
+- 공식 가격표에서 3.5 Flash-Lite의 무료 입력·출력을 확인했습니다. **실제 사용 가능 모델과 RPM/TPM/RPD는 프로젝트·지역·현재 정책에 따라 달라집니다.** 고정된 무료 호출 횟수를 약속하지 않습니다.
+- API 키만으로 앱이 결제 연결 상태를 판별할 수 없습니다. 무료 프로젝트인지 AI Studio에서 확인하세요. 유료 프로젝트 키는 같은 호출도 과금될 수 있습니다. 앱은 유료 Elice·다른 모델·유료 Google context cache로 자동 전환하지 않습니다.
+- 429는 할당량/요청·토큰 제한, 503은 서비스 부하일 수 있습니다. 자동 재시도로 사용량을 늘리지 않습니다. 재시도 대기 헤더가 있으면 표시합니다.
+- **Gemini API 약관에는 18세 미만 대상·접근 가능 앱 제한이 있습니다.** 현재 Gemini 경로는 성인 개발자·평가자의 로컬 PoC 검증용으로 안내합니다. 고등학생 공개 서비스에 적합하다는 검토를 마친 것이 아니며, 체크박스가 이를 해결하는 연령 인증은 아닙니다.
+- 무료 서비스의 입력·출력은 Google 제품 개선과 검토에 사용될 수 있으므로 **개인정보·민감정보·기밀 자료를 보내지 마세요.** 성인 평가용 합성 질문·비식별 자료를 사용하세요. API와 소비자 Gemini 구독의 무료 혜택은 구분해야 합니다.
+
+관련 조건은 [Gemini API 이용약관](https://ai.google.dev/gemini-api/docs/terms)을 확인하세요.
+
+## PDF 분석과 결과 캐시
+
+자료는 1개 / 최대 **5 MiB**, 전체 multipart 요청은 6 MiB입니다. PDF·PNG·JPEG·WebP의 확장자·MIME·시작 서명을 검사합니다.
+
+텍스트 PDF는 최대 **20쪽·12,000자**를 별도 프로세스에서 읽습니다. 20쪽 초과, 암호화·손상·복잡도·8초 제한 초과는 오류로 안내합니다. 12,000자 이후가 잘리면 이를 표시합니다. 이미지·텍스트 없는 스캔/빈 PDF의 OCR은 미지원이며 읽지 못한 쪽을 안내합니다. 수식·표·읽기 순서는 불완전할 수 있습니다. 이미지 원본은 Gemini에 보내지 않습니다.
+
+원본 파일·추출 텍스트를 영구 보관하지 않습니다. 업로드 프레임워크의 요청 중 임시 파일은 닫습니다. PDF 프로세스에는 API 키 환경 변수를 넘기지 않고, 지원 OS의 CPU 제한·Linux 주소 공간 제한을 사용합니다. 동일한 메모리 격리를 모든 OS에서 보장하지는 않습니다.
+
+**캐시 정책:**
+
+- Google의 유료 context cache가 아니라 서버 프로세스 내부의 TTL/LRU 결과 캐시입니다.
+- 키에는 Provider·모델·프롬프트 버전·실제 프롬프트·스키마·출력 제한·인증 범위가 반영됩니다.
+- 키는 프로세스별 임의 비밀값으로 만든 HMAC-SHA256이며 질문·PDF 원문·파일명·API 키를 캐시 키나 로그에 남기지 않습니다.
+- 검증한 **출력 명세만** 보관합니다. 설명·인용에 자료의 일부가 포함될 수 있습니다. 해시 키가 출력 내용까지 익명화하거나 암호화하는 것은 아닙니다.
+- 동일한 동시 입력은 한 번의 생성 요청을 공유합니다. 오류·불완전 응답·수학·인용 검증 실패는 캐시하지 않습니다.
+- 캐시 hit는 API를 재호출하지 않고 `usage={}`, `generation.cached=true`로 표시합니다. 기존 호출의 토큰 사용량을 새 사용량처럼 표시하지 않습니다.
+- 응답의 파일명·요청 ID 등은 매번 현재 요청에서 만들므로 다른 파일명이 섞이지 않습니다.
+- TTL은 재사용 기한이며 만료 항목의 물리 제거는 다음 캐시 접근 때 이뤄집니다. 서버 재시작 시 모두 사라지고 TTL=0 요청은 캐시를 비웁니다. 디스크·DB에 쓰지 않습니다.
+- 캐시는 프로세스별입니다. 여러 worker 간 공유·사용자별 인증 격리는 구현하지 않았으므로 현재 로컬 PoC 범위에서 사용합니다.
+
+## JSON·수학·실행 검증
+
+학습 명세는 개념 설명, 질문에서 추정한 수준·선행 개념, 단계, 시각화 유형·변수, 예제, 확인 문제, 자료 인용·가정을 포함합니다.
+
+허용 시각화는 `secant_tangent_x2` 하나입니다. 함수·기준점·범위는 고정하고 모델은 h 초기값을 선택합니다. h는 −1.2부터 1.2까지 0.0001 간격이며, 예제·문제의 값도 같은 간격으로 제한합니다.
+
+h≠0의 할선 기울기 2+h, 접선 기울기 2, h=0 미정의를 코드로 검증합니다. 확인 문제 문장과 채점도 수치로 구성합니다. 인용은 제공된 페이지의 추출 문자열과 비교합니다. 자연어 설명 전체의 정확성이나 인용의 의미적 관련성을 완전히 검증하지는 않습니다.
+
+임의 실행 코드·다른 함수·추가 JSON 필드는 거절합니다. 고정 스크립트 해시 CSP와 `sandbox="allow-scripts"` iframe을 사용하고 `allow-same-origin`은 주지 않습니다. 검증된 JSON만 전달해 `textContent`로 표시하며 메인 DOM에 AI HTML을 넣지 않습니다. iframe/CSP만으로 완전한 보안을 보장하지 않습니다.
+
+## 오류와 API
+
+| 원인 | 코드 예시 / 동작 |
+| --- | --- |
+| 키·권한·지역 | `gemini_auth`, 설정 확인 |
+| 모델 접근 불가 / HTTP 404 | `gemini_model_unavailable`, 자동 모델 전환 없음 |
+| 무료 티어 사전 조건 / HTTP 400 | `gemini_free_tier_unavailable` |
+| 한도 / HTTP 429 | `gemini_quota_exceeded`, 대기 시간 안내·기본 예제 |
+| 서비스 부하 / HTTP 503 | `gemini_overloaded` 또는 `gemini_unavailable`, 기본 예제·나중에 재시도 |
+| 시간 초과 | `gemini_timeout` |
+| 출력 잘림·차단·형식 | `gemini_output_truncated`, `gemini_blocked`, `gemini_invalid_response` |
+| 수학·인용·스키마 | `invalid_lesson_spec` |
+| Elice 선택 | `elice_not_implemented`, 네트워크 호출 없음 |
+
+`GET /api/health`는 모드·설정 형식 확인·캐시 여부·제한 시간을 반환합니다. `ai_configured=true`는 실제 인증·생성 성공을 뜻하지 않습니다.
+
+`POST /api/learn`은 multipart이며 `concept`(200자), `question`(2,000자), `format=html|shorts`, 선택적 `file`, Gemini의 `consent=true`를 받습니다. 개념·질문 중 하나가 필수입니다. 전송 확인은 캐시 조회 전에도 요구합니다.
 
 ```bash
 curl http://127.0.0.1:8765/api/health
 curl -X POST http://127.0.0.1:8765/api/learn \
-  -F 'concept=미분계수의 기하학적 의미' \
-  -F 'question=왜 할선의 기울기가 2에 가까워지나요?' \
-  -F 'format=html'
+  -F 'question=h=0을 대입하면 왜 안 되나요?' \
+  -F 'format=html' -F 'consent=true'
 ```
 
-응답에는 `mode`, `format`, 입력 원문, 파일 메타데이터, 자료 분석 상태와 가정, `lesson` 또는 `video`가 포함됩니다. `html`은 `/lessons/secant-tangent` 뷰어 주소, `shorts`는 기존 영상 주소를 반환합니다. 잘못된 입력은 422, 지원하지 않는 파일·요청 형식은 415, 크기 초과는 413입니다. multipart 파서 자체의 제한 위반은 400을 반환합니다. 파일 포함 전체 요청은 6 MiB로 제한합니다.
+응답은 `mode`, 입력, 자료 처리 상태, `generation`(Provider·모델·요청 ID·캐시·토큰), `verification`, `lesson.spec` 또는 기존 영상입니다. 앱 로그에는 요청 ID·모드·상태·오류 코드만 기록합니다. 일반 오류 응답에는 Google이 반사할 수 있는 원문을 포함하지 않습니다.
 
-## 자료 처리와 실행 격리
-
-- 자료와 질문을 외부 AI로 전송하지 않습니다. DB나 영구 업로드 폴더를 만들지 않습니다.
-- 업로드는 요청 처리 중 메모리 또는 프레임워크 임시 파일을 사용할 수 있고, 처리 후 닫습니다. 파일 내용·질문 본문을 앱 로그에 기록하지 않습니다.
-- 결과의 사용자 입력은 `textContent`로 표시합니다. 응답 HTML을 메인 DOM에 삽입하지 않습니다.
-- 학습 결과는 `sandbox="allow-scripts"` iframe에서 실행합니다. `allow-same-origin`, 팝업, 폼 제출, 상위 화면 이동 권한을 주지 않습니다.
-- 뷰어 응답에도 CSP sandbox를 적용하며, 고정 스크립트의 SHA-256 해시만 허용하고 네트워크 요청·외부 자산·폼·base URL을 막습니다. 뷰어 URL은 클라이언트에서 허용 목록으로 확인합니다.
-- 모바일에서도 페이지 스크롤 하나로 읽도록 iframe 높이를 조절합니다. 높이 메시지는 해당 iframe에서 온 것인지 확인하고 300–2,200px 범위만 허용합니다.
-- 현재는 검토 가능한 고정 템플릿만 실행하고 그래프를 유한 횟수로 그립니다. 임의 생성 코드의 CPU·메모리 실행 중단은 구현하지 않았습니다. iframe과 CSP만으로 완전한 보안을 보장하지 않으며, 이후 임의 코드 생성 전에는 별도 검증·실행 예산·격리 호스트 정책이 필요합니다.
-- 로컬 PoC이므로 인증, 사용자별 저장소, 운영용 rate limit은 없습니다. 공개 서비스 배포 전 별도 구현이 필요합니다.
-
-API 실패 시 기본 예제는 `/api/learn`을 거치지 않고 정적 템플릿을 엽니다. **서버 프로세스 전체가 중단되면 템플릿도 열 수 없습니다.** 외부 API는 현재 호출하지 않으므로 외부 API 장애에 의존하지 않습니다. 원본의 Google Fonts 링크는 유지했으며, 네트워크가 없으면 시스템 글꼴로 표시됩니다.
-
-## 소스 구조와 수정 방법
-
-```text
-references/                    원본 HTML·기획 PDF (보존)
-docs/                          제품 명세·구현 계획·검증 기록
-backend/
-  requirements.txt             서버 의존성
-  app/main.py                  앱·정적 파일·뷰어 CSP·요청 크기 제한
-  app/routes/learn.py           health·업로드·입력 검증
-  app/services/lessons.py       고정 학습 응답
-frontend/
-  index.html                   원본에서 준비한 실행용 랜딩
-  workflow.html                추가 학습 UI의 수정 원본
-  static/workflow.css          기존 색상·글꼴 변수를 재사용하는 UI 스타일
-  static/workflow.js           입력·API 연결·결과·오류·기본 예제
-  static/media/                원본에서 그대로 추출한 MP4 2개
-  lessons/secant-tangent.html  격리 실행할 고정 수학 템플릿
-scripts/prepare_frontend.py    원본 + 추가 UI로 index·미디어 재구성
-tests/test_api.py              API·입력 제한·원본 보존 검사
-tests/browser_smoke.py         전체 흐름·기존 데모·브라우저 격리 검사
-```
-
-입력 화면을 바꿀 때 `frontend/workflow.html`을 수정한 후 다음 명령을 실행합니다. `frontend/index.html` 직접 수정은 재구성 시 덮어씁니다. 실행할 때마다 재구성할 필요는 없습니다.
-
-```bash
-python3 scripts/prepare_frontend.py
-```
-
-실행용 랜딩의 시각 요소·데모 스크립트는 유지했습니다. CTA를 학습 폼으로 연결하고, 현재 기능을 오해할 수 있는 자료 분석·맞춤 생성 문구에는 준비 중 상태를 표시했습니다. 원본의 통계·효과 주장은 이번 구현에서 별도로 검증하지 않았습니다.
-
-## 테스트
+## 테스트와 실제 검증
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m pytest tests/test_api.py -q
+python -m pytest tests/test_api.py tests/test_phase2.py tests/test_providers_cache.py -q
 node --check frontend/static/workflow.js
 ```
 
-브라우저 검증은 위의 FastAPI 서버를 실행한 상태에서:
+일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경을 확인합니다.
+
+브라우저 검증은 mock 서버를 실행해 진행합니다.
 
 ```bash
-python tests/browser_smoke.py
+AHA_AI_PROVIDER=mock python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8766
+AHA_BASE_URL=http://127.0.0.1:8766 python tests/browser_smoke.py
+AHA_BASE_URL=http://127.0.0.1:8766 python tests/browser_phase2.py
 ```
 
-macOS에 설치된 Chrome을 기본 사용합니다. 다른 환경에서는 `python -m playwright install chromium`으로 브라우저를 준비하거나 실행 파일을 지정하세요.
+설치된 macOS Chrome을 사용합니다. 다른 환경은 `python -m playwright install chromium` 또는 `AHA_BROWSER_EXECUTABLE=/path/to/chrome`을 설정하세요.
+
+명시적인 실제 호출 검증은 **성인 개발·평가용 합성 질문만** 보냅니다.
 
 ```bash
-AHA_BASE_URL=http://127.0.0.1:8765 \
-AHA_BROWSER_EXECUTABLE=/path/to/chrome \
-python tests/browser_smoke.py
+python scripts/check_gemini.py
+# 실제 요청 2개로 질문별 설명 변화까지 확인:
+python scripts/check_gemini.py --compare
 ```
 
-테스트 전용 환경 변수는 위 두 개뿐입니다. 앱 실행에 필요한 환경 변수나 비밀 키는 없습니다. 외부 AI·영상 API 설정은 아직 없으며, Elice 모델·인증·할당량의 실제 문서를 확인하는 Phase 2 이후 추가합니다. 비밀 키는 향후 환경 변수로 관리하고 저장소에 커밋하지 않습니다.
+이 스크립트는 캐시를 우회하며 무료 할당량을 사용합니다. 성공 시 `tmp/gemini-live-check.json`에 시각·모델·요청 ID·사용량·설명 해시를 기록합니다. 키나 본문은 저장하지 않습니다. 실패 시 HTTP 상태와 키를 가린 Google 오류 메시지를 출력합니다. **실제 사용자 입력을 받는 앱 로그에는 이 진단 원문을 출력하지 않습니다.**
 
-브라우저 스크린샷은 `tmp/screenshots/`에 생성됩니다. 검증 범위와 한계는 [Phase 1 기록](docs/PHASE1_NOTES.md)을 참조하세요.
-# AHA-
+실제 FastAPI·PDF·브라우저 그래프와 캐시까지 한 번에 확인하려면 Gemini 서버를 실행한 상태에서 `python tests/browser_live_gemini.py`를 실행합니다. 이 검증은 합성 자료로 새 요청 1건(이미 캐시에 있으면 0건)을 생성하고 같은 입력의 캐시 hit를 확인합니다. 자동 재시도하지 않으며 실제 할당량을 사용합니다. 일반 테스트에는 포함되지 않습니다.
+
+## 소스 구조
+
+```text
+backend/app/
+  config.py                 서버 환경 설정
+  providers/
+    base.py, __init__.py     공통 계약·Provider 선택
+    mock.py                 고정 예제
+    gemini.py               Google generateContent
+    elice.py                네트워크 없는 준비 구현체
+  schemas.py                학습 명세·수학·인용 검증
+  services/
+    lessons.py              PDF → Provider → 검증 → 캐시 → 응답
+    prompts.py              버전이 있는 프롬프트
+    validation.py           공통 JSON 검증
+    cache.py                메모리 TTL/LRU·동시 요청 공유
+    materials.py, pdf_worker.py
+frontend/                   기존 랜딩·폼·격리된 그래프
+scripts/prepare_frontend.py  원본 + 폼으로 실행 HTML 재구성
+scripts/check_gemini.py      명시적 실제 호출 검증
+tests/                      회귀·Provider·캐시·브라우저 검증
+references/                 보존한 HTML·기획 PDF
+```
+
+`frontend/workflow.html`을 수정하면 `python3 scripts/prepare_frontend.py`로 index를 재구성합니다. index 직접 수정은 재구성 시 덮어씁니다. 원본 Google Fonts 링크는 유지하며 연결이 없으면 시스템 글꼴을 사용합니다. 로컬 변경은 아직 GitHub에 커밋·푸시하지 않았습니다.

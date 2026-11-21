@@ -16,7 +16,9 @@ Turn the student's study material and difficult concept into a personalized, vis
 - Graphs, sliders and simulations that make concepts manipulable.
 - Primary demo: f(x)=x²; manipulate Δx to see the secant approach the tangent, and display mathematically correct slope values.
 - Formula for a=1: secant slope ((1+h)²-1)/h = 2+h (h≠0), tangent slope 2. Avoid division by zero.
-- Generate HTML/JS via Elice ML API only after verifying available documentation and credentials.
+- Phase 2 uses a provider abstraction: mock (fixed local demo), Gemini (structured lesson JSON), and an unconnected Elice implementation reserved for verified future specifications.
+- Gemini's model ID is configured through environment variables. The current requested model is `gemini-3.5-flash-lite`; generated JSON passes strict schema, known-math and source-quote validation before vetted HTML/JS components render it.
+- Gemini is currently for adult developer/judge local evaluation with synthetic/non-sensitive material. Its terms and free-tier data use must be considered before any service directed at minors; no public student-service eligibility is claimed.
 - Run generated code in an isolated, constrained viewer; validate math and provide a review/quality checkpoint.
 
 ## Output B: independent learning short (slides 6, 9, 11)
@@ -35,6 +37,7 @@ Pitch slide 12 limits the initial PoC to one Math II secant→tangent scenario, 
 - File type/size checks, safe extraction, clear user errors, API timeout and fallback.
 - Math result checks for known scenarios; avoid claims that all arbitrary generated mathematics is verified.
 - Never send sensitive study materials to an API without informing the user and using appropriate safeguards.
+- Cache validated lesson specifications in bounded process-local TTL/LRU storage. Keys include provider, model, prompt/schema versions and exact input fingerprints; never log original questions, PDF text or credentials. Do not cache failures or count cache hits as new API/token usage.
 - Do not imply copyright review is automated unless implemented.
 
 ## Pitch alignment

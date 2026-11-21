@@ -1,4 +1,4 @@
-<!-- Phase 1 additive workflow; rebuild index with scripts/prepare_frontend.py. -->
+<!-- Additive workflow; rebuild index with scripts/prepare_frontend.py. -->
 <section id="learn" class="learning" aria-labelledby="learn-title">
   <div class="wrap">
     <div class="center">
@@ -18,25 +18,26 @@
         </label>
         <p id="file-status" class="field-note" aria-live="polite">자료 없이 질문만 입력해도 괜찮아요.</p>
         <button id="remove-file" type="button" class="text-button" hidden>파일 선택 취소</button>
-        <p id="material-note" class="honest-note">지금은 업로드 형식·크기만 확인해요. 자료 내용 분석은 준비 중이며, 파일은 요청 처리 후 보관하지 않아요. 외부 AI로 전송하지 않아요.</p>
+        <p id="material-note" class="honest-note">텍스트 PDF는 최대 20쪽·12,000자를 추출해요. 이미지·스캔본 OCR은 지원하지 않아요. Gemini 모드에서는 안내 확인 후 질문·추출 텍스트를 Google에 전송할 수 있어요. 원본 파일은 보관하지 않으며, 생성 명세는 같은 입력의 재사용을 위해 서버 메모리에 잠시 캐시해요.</p>
         <h3><span class="step-number">2</span> 어디가 어려웠나요?</h3>
         <label class="field-label" for="concept">어려운 개념</label>
         <input id="concept" name="concept" type="text" maxlength="200" placeholder="예: 미분계수의 기하학적 의미">
         <label class="field-label" for="question">나의 질문</label>
         <textarea id="question" name="question" rows="4" maxlength="2000" placeholder="예: 두 점을 잇는 할선이 어떻게 접선이 되나요?" aria-describedby="question-note"></textarea>
-        <p id="question-note" class="field-note">개념이나 질문 중 하나를 입력해 주세요. 현재 학습 결과는 수학 II 고정 예제예요.</p>
+        <p id="question-note" class="field-note">개념이나 질문 중 하나를 입력해 주세요. 수학 II 미분계수·할선→접선 질문을 우선 지원해요.</p>
         <button id="sample-input" class="text-button" type="button">예시 질문 채우기 ↗</button>
       </div>
       <div class="card input-card">
         <h3><span class="step-number">3</span> 어떻게 배우고 싶나요?</h3>
         <fieldset class="format-options">
           <legend class="sr-only">학습 방식</legend>
-          <label class="format-option"><input type="radio" name="format" value="html" checked><span><strong>인터랙티브 학습</strong><span>슬라이더로 할선이 접선에 가까워지는 모습을 직접 확인해요.</span><em>조작 가능한 로컬 예제</em></span></label>
+          <label class="format-option"><input type="radio" name="format" value="html" checked><span><strong>인터랙티브 학습</strong><span>설명을 읽고 할선이 접선에 가까워지는 모습을 확인해요.</span><em id="generation-mode">모드 확인 중 · mock / Gemini</em></span></label>
           <label class="format-option"><input type="radio" name="format" value="shorts"><span><strong>숏츠 학습</strong><span>미분계수를 설명하는 기존 예시 영상을 봐요.</span><em>기존 영상 · 새 숏츠 생성 준비 중</em></span></label>
         </fieldset>
-        <div class="scope-note"><strong>이번에는 이 개념을 배워요</strong><p>수학 II · f(x) = x²에서 점 P(1, 1)의 미분계수<br>할선의 기울기 2+h → 접선의 기울기 2</p><p>입력한 자료나 질문에 맞춘 AI 설명은 아직 제공하지 않아요.</p></div>
+        <div class="scope-note"><strong>이번에는 이 개념을 배워요</strong><p>수학 II · f(x) = x²에서 점 P(1, 1)의 미분계수<br>할선의 기울기 2+h → 접선의 기울기 2</p><p id="mode-note">mock은 고정 예제, Gemini는 실제 모델로 설명을 구성해요. Elice는 향후 연결 예정이에요.</p></div>
+        <label id="consent-option" class="consent-option" hidden><input id="external-consent" type="checkbox"><span>성인 개발·평가용 Gemini 전송 안내를 확인했어요. 질문·개념·PDF 추출 텍스트가 Google에 전송될 수 있으며, 무료 티어 입력·출력은 제품 개선과 검토에 사용될 수 있어요. 개인정보·민감정보 없는 자료만 사용해요. 이미지 원본은 전송하지 않아요.</span></label>
         <button id="generate" class="btn btn-primary generate-button" type="submit">학습 결과 열기 →</button>
-        <p id="request-status" class="field-note" role="status" aria-live="polite">로컬 서버에서 예제를 불러와요. API 키는 필요 없어요.</p>
+        <p id="request-status" class="field-note" role="status" aria-live="polite">서버의 학습 모드를 확인하고 있어요.</p>
         <p id="request-error" class="error-message" role="alert" hidden></p>
         <button id="fallback" type="button" class="btn btn-ghost" hidden>기본 수학 예제 바로 열기</button>
       </div>
@@ -47,6 +48,7 @@
       <p id="result-notice" class="honest-note"></p>
       <dl id="request-summary" class="request-summary"></dl>
       <p id="grounding-note" class="field-note"></p>
+      <p id="verification-note" class="field-note" hidden></p>
       <div id="lesson-view"></div>
       <div id="video-view" hidden><p id="video-note" class="honest-note"></p><video id="result-video" controls playsinline preload="metadata" aria-label="기존 미분계수 예시 영상"></video><button id="switch-html" type="button" class="btn btn-ghost">슬라이더로도 학습하기 →</button></div>
     </div>

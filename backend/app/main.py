@@ -7,7 +7,10 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .config import ConfigurationError
 from .routes.learn import router
+from .services.errors import LearningError
+import logging
 
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND = ROOT / "frontend"
@@ -49,10 +52,32 @@ class BoundedBodyMiddleware:
         await self.app(scope, bounded_receive, send)
 
 
-app = FastAPI(title="AHA! Phase 1", version="0.1.0")
+logging.getLogger("aha.generation").setLevel(logging.INFO)
+if not logging.getLogger("aha.generation").handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+    logging.getLogger("aha.generation").addHandler(handler)
+    logging.getLogger("aha.generation").propagate = False
+
+app = FastAPI(title="AHA! Phase 2", version="0.2.0")
 app.add_middleware(BoundedBodyMiddleware)
 app.include_router(router)
 app.mount("/static", StaticFiles(directory=FRONTEND / "static"), name="static")
+
+
+@app.exception_handler(LearningError)
+async def learning_error(request, exc: LearningError):
+    data = {"detail":exc.message, "code":exc.code, "fallback_available":exc.fallback}
+    headers = {}
+    if exc.retry_after is not None:
+        data["retry_after_seconds"] = exc.retry_after
+        headers["Retry-After"] = str(exc.retry_after)
+    return JSONResponse(data, status_code=exc.status, headers=headers)
+
+
+@app.exception_handler(ConfigurationError)
+async def configuration_error(request, exc: ConfigurationError):
+    return JSONResponse({"detail":str(exc), "code":"invalid_configuration", "fallback_available":True}, status_code=503)
 
 
 @app.get("/", include_in_schema=False)

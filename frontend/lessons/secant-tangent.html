@@ -7,10 +7,17 @@
 <style>
 :root{color-scheme:light;--ink:#2b2350;--muted:#6f6893;--violet:#7b5cf0;--lav:#e9e3ff;--bg:#fbfaff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;line-height:1.65;padding:24px}h1{font-size:1.4rem;margin:0 0 6px}p{margin:8px 0}.intro{color:var(--muted);font-size:.93rem}.graph-layout{display:grid;grid-template-columns:1.4fr 1fr;gap:24px;align-items:start;margin-top:20px}svg{display:block;width:100%;background:#f4f0ff;border-radius:18px}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin:12px 0}.legend span:before{content:"";display:inline-block;width:20px;height:3px;vertical-align:middle;margin-right:5px;background:var(--violet)}.legend .secant:before{background:#e0457c}.legend .tangent:before{background:#bc8200}label{display:block;font-weight:700}input[type=range]{width:100%;accent-color:var(--violet);margin:18px 0}button{border:1px solid #cfc3ff;background:#fff;color:#5a3fd6;border-radius:999px;padding:7px 12px;font:inherit;font-size:.82rem;cursor:pointer}button:hover{background:var(--lav)}:focus-visible{outline:3px solid var(--violet);outline-offset:3px}.presets{display:flex;gap:8px;flex-wrap:wrap}.readout{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:18px}.readout>div{background:var(--lav);border-radius:14px;padding:12px}.readout span{display:block;font-size:.73rem;color:var(--muted)}.readout b{font-size:1.2rem;font-variant-numeric:tabular-nums}.aha{margin-top:18px;padding:16px;background:var(--lav);border-radius:14px;font-weight:700}.aha.on{background:#ffd23f;color:#4a3600}.math-note{font-size:.85rem;color:var(--muted)}.steps{margin:22px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.steps li{padding:16px;background:white;border:1px solid #e3dcff;border-radius:16px;font-size:.88rem}.steps strong{display:block;color:#5a3fd6;margin-bottom:6px}.formula{background:#f3efff;padding:14px;border-radius:14px;overflow-wrap:anywhere}.point-note{font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums;min-height:45px}@media(max-width:760px){body{padding:16px}.graph-layout{grid-template-columns:1fr;gap:8px}.steps{grid-template-columns:1fr;gap:8px}.steps li{padding:12px}.readout b{font-size:1.05rem}h1{font-size:1.2rem}}
 </style>
+<style>
+.dynamic-explanation{padding:16px;background:#e9e3ff;border-radius:16px;margin:18px 0}.dynamic-explanation p{white-space:pre-wrap}.dynamic-details{margin:16px 0;font-size:.88rem}.dynamic-details summary{cursor:pointer;font-weight:700;color:#5a3fd6}.dynamic-details p,.dynamic-details li{overflow-wrap:anywhere}.practice{margin-top:20px;padding:18px;background:#fff;border:1px solid #e3dcff;border-radius:16px}.practice h2{font-size:1.1rem;margin:0 0 14px}.practice table{width:100%;border-collapse:collapse;font-size:.85rem}.practice th,.practice td{text-align:left;padding:8px;border-bottom:1px solid #e3dcff}.practice input,.practice select{font:inherit;max-width:100%;padding:8px;border:1px solid #cfc3ff;border-radius:8px;background:#fbfaff;color:#2b2350}.quiz-item{padding:14px 0;border-top:1px solid #e3dcff}.quiz-item label{font-size:.9rem;margin-bottom:8px}.quiz-item button{margin-left:8px}.quiz-feedback{font-size:.85rem;white-space:pre-wrap}.source-quote{padding:12px;border-left:3px solid #7b5cf0;background:#f4f0ff;white-space:pre-wrap;overflow-wrap:anywhere}#lesson-explanation,#student-need{overflow-wrap:anywhere}[hidden]{display:none!important}
+</style>
 </head>
 <body>
 <h1>두 점 사이의 기울기에서, 한 점의 기울기로</h1>
 <p class="intro">f(x) = x² 위의 P(1, 1)은 고정하고 Q를 움직여 보세요. h는 두 점 사이의 x 변화량 Δx예요.</p>
+<div id="dynamic-lesson" hidden>
+  <div class="dynamic-explanation"><strong id="student-need"></strong><p id="lesson-explanation"></p></div>
+  <details class="dynamic-details"><summary>질문에서 추정한 설명 수준과 필요한 개념</summary><p id="analysis-level"></p><p id="analysis-reason"></p><p id="analysis-concepts"></p></details>
+</div>
 <div class="graph-layout">
   <div><svg id="graph" viewBox="0 0 520 350" role="img" aria-label="y=x² 위의 두 점 P와 Q, 할선과 접선 그래프"></svg><div class="legend"><span>y = x²</span><span class="secant">할선 PQ</span><span class="tangent">접선 y = 2x − 1</span></div><p id="point-note" class="point-note"></p></div>
   <div>
@@ -23,7 +30,13 @@
   </div>
 </div>
 <div class="formula">h ≠ 0일 때, 할선 기울기 = ((1+h)² − 1) / h = (2h+h²) / h = <strong>2+h</strong><br>h → 0일 때, 2+h → <strong>2 = f′(1)</strong></div>
-<ol class="steps"><li><strong>01 · 두 점을 이어요</strong>P와 Q를 잇는 할선은 두 점 사이의 평균변화율을 나타내요.</li><li><strong>02 · Q를 가까이 옮겨요</strong>|h|가 작아질수록 할선과 접선의 기울기 차이 |h|도 작아져요.</li><li><strong>03 · 극한을 생각해요</strong>h=0을 대입해 나누는 게 아니에요. h≠0인 채로 가까워질 때의 극한이 미분계수 2예요.</li></ol>
+<ol id="lesson-steps" class="steps"><li><strong>01 · 두 점을 이어요</strong>P와 Q를 잇는 할선은 두 점 사이의 평균변화율을 나타내요.</li><li><strong>02 · Q를 가까이 옮겨요</strong>|h|가 작아질수록 할선과 접선의 기울기 차이 |h|도 작아져요.</li><li><strong>03 · 극한을 생각해요</strong>h=0을 대입해 나누는 게 아니에요. h≠0인 채로 가까워질 때의 극한이 미분계수 2예요.</li></ol>
+<div id="dynamic-practice" hidden>
+  <section class="practice"><h2>수치 예제</h2><table><thead><tr><th>h</th><th>할선 기울기</th><th>접선 기울기</th></tr></thead><tbody id="example-rows"></tbody></table><div id="example-explanations"></div></section>
+  <section class="practice"><h2>이해했는지 확인해 볼까요?</h2><div id="quiz-items"></div></section>
+  <details id="source-details" class="dynamic-details" hidden><summary>학습 자료에서 확인한 원문</summary><p class="math-note">인용 문자열의 일치를 확인했어요. 인용의 의미나 설명 전체를 자동 검증한 것은 아니에요.</p><div id="source-quotes"></div></details>
+  <details class="dynamic-details" open><summary>가정과 빠진 맥락</summary><ul id="lesson-assumptions"></ul></details>
+</div>
 <script>
 (() => {
   'use strict';
@@ -46,8 +59,8 @@
   let path = '';
   for(let i=0;i<=150;i++){const x=-.5+i*.02;path+=(i?'L':'M')+X(x).toFixed(2)+' '+Y(x*x).toFixed(2);}
   make('path',{d:path,fill:'none',stroke:'#7b5cf0','stroke-width':3.5});
-  const tangent=make('line',{stroke:'#bc8200','stroke-width':2.5,'stroke-dasharray':'7 6'});
-  const secant=make('line',{stroke:'#e0457c','stroke-width':3});
+  const tangent=make('line',{id:'tangent-line',stroke:'#bc8200','stroke-width':2.5,'stroke-dasharray':'7 6'});
+  const secant=make('line',{id:'secant-line',stroke:'#e0457c','stroke-width':3});
   const dx=make('line',{stroke:'#8a80b8','stroke-dasharray':'3 3'});
   const dy=make('line',{stroke:'#8a80b8','stroke-dasharray':'3 3'});
   const q=make('circle',{r:7,fill:'#ffc7d6',stroke:'#e0457c','stroke-width':3});
@@ -75,11 +88,64 @@
   slider.addEventListener('input',draw);
   document.querySelectorAll('[data-h]').forEach(button=>button.addEventListener('click',()=>{slider.value=button.dataset.h;draw();}));
   draw();
+  function addText(parent, tag, value, className) {
+    const node=document.createElement(tag);node.textContent=String(value);
+    if(className)node.className=className;
+    parent.append(node);return node;
+  }
+  window.addEventListener('message',event=>{
+    if(event.source!==parent || event.data?.type!=='aha:lesson-spec')return;
+    const spec=event.data.spec;
+    if(!spec || JSON.stringify(spec).length>30000 || spec.schema_version!=='1' || spec.visualization?.type!=='secant_tangent_x2')return;
+    if(!Number.isFinite(spec.visualization.variable?.initial) || Math.abs(spec.visualization.variable.initial)>1.2)return;
+    if(!Array.isArray(spec.steps)||spec.steps.length>4||!Array.isArray(spec.examples)||spec.examples.length>3||!Array.isArray(spec.quiz)||spec.quiz.length>3)return;
+    document.querySelector('h1').textContent=String(spec.title).slice(0,80);
+    get('student-need').textContent=String(spec.analysis.student_need).slice(0,240);
+    get('lesson-explanation').textContent=String(spec.explanation).slice(0,700);
+    const levels={foundation:'기초부터',standard:'교과 개념 중심',advanced:'심화 연결'};
+    get('analysis-level').textContent='설명 수준: '+(levels[spec.analysis.learning_level]||'교과 개념 중심')+' · 질문을 바탕으로 한 추정이며 성취도 진단이 아니에요.';
+    get('analysis-reason').textContent=spec.analysis.level_reason;
+    get('analysis-concepts').textContent='핵심 개념: '+spec.analysis.core_concepts.join(' · ')+' / 먼저 알면 좋은 것: '+spec.analysis.prerequisites.join(' · ');
+    get('lesson-steps').replaceChildren();
+    spec.steps.forEach((step,index)=>{const li=document.createElement('li');addText(li,'strong',String(index+1).padStart(2,'0')+' · '+step.title);addText(li,'span',step.explanation);get('lesson-steps').append(li);});
+    get('example-rows').replaceChildren();get('example-explanations').replaceChildren();
+    spec.examples.forEach(example=>{
+      const tr=document.createElement('tr');
+      [example.h,2+example.h,2].forEach(value=>addText(tr,'td',Number(value).toFixed(4)));
+      get('example-rows').append(tr);addText(get('example-explanations'),'p',example.explanation,'math-note');
+    });
+    get('quiz-items').replaceChildren();
+    spec.quiz.forEach((quiz,index)=>{
+      const item=document.createElement('div');item.className='quiz-item';
+      const question=quiz.kind==='undefined_at_zero'?'h=0일 때 할선 기울기는 어떻게 될까요?':quiz.kind==='tangent_slope'?'f(x)=x²에서 x=1의 접선 기울기는 얼마일까요?':`h=${Number(quiz.h).toFixed(4)}일 때 할선 기울기는 얼마일까요?`;
+      const label=addText(item,'label',`${index+1}. ${question}`);label.htmlFor='answer-'+index;
+      const input=document.createElement(quiz.kind==='undefined_at_zero'?'select':'input');input.id='answer-'+index;
+      if(quiz.kind==='undefined_at_zero'){
+        [['','선택해 주세요'],['undefined','정의되지 않는다'],['0','0'],['2','2']].forEach(([value,text])=>{const option=addText(input,'option',text);option.value=value;});
+      }else{input.type='number';input.step='any';input.inputMode='decimal';}
+      item.append(input);const button=addText(item,'button','답 확인');button.type='button';
+      const feedback=addText(item,'p','','quiz-feedback');feedback.setAttribute('role','status');
+      button.addEventListener('click',()=>{
+        if(input.value===''){feedback.textContent='먼저 답을 입력하거나 선택해 주세요.';return;}
+        const expected=quiz.kind==='secant_slope'?2+quiz.h:2;
+        const correct=quiz.kind==='undefined_at_zero'?input.value==='undefined':Math.abs(Number(input.value)-expected)<1e-6;
+        feedback.textContent=(correct?'맞았어요! ':'다시 생각해 보세요. ')+quiz.explanation;
+      });
+      get('quiz-items').append(item);
+    });
+    get('source-quotes').replaceChildren();
+    (spec.source_quotes||[]).slice(0,3).forEach(source=>addText(get('source-quotes'),'blockquote',`${source.page}쪽 · ${source.quote}`,'source-quote'));
+    get('source-details').hidden=!spec.source_quotes?.length;
+    get('lesson-assumptions').replaceChildren();
+    (spec.assumptions||[]).slice(0,4).forEach(value=>addText(get('lesson-assumptions'),'li',value));
+    get('dynamic-lesson').hidden=false;get('dynamic-practice').hidden=false;
+    slider.value=spec.visualization.variable.initial;draw();
+  });
   // Only a bounded layout measurement leaves this isolated document.
   new ResizeObserver(() => {
-    requestAnimationFrame(() => parent.postMessage({
-      type:'aha:lesson-size', height:Math.ceil(document.body.getBoundingClientRect().height),
-    }, '*'));
+    parent.postMessage({
+      type:'aha:lesson-size', height:Math.min(12000,Math.ceil(document.body.getBoundingClientRect().height)),
+    }, '*');
   }).observe(document.body);
 })();
 </script>
