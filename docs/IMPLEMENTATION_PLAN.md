@@ -6,6 +6,7 @@
 - Current requested model: `gemini-3.5-flash-lite`, selected via environment variables. Actual call status and any upstream failures are recorded honestly in `PHASE2_NOTES.md`; HTTP test doubles are never counted as successful real generation.
 - Phase 3-A: separate generic storyboard DSL/API implemented with mock and Gemini HTTP-double tests. See `PHASE3A_NOTES.md` and `STORYBOARD_DSL.md`. Actual storyboard API calls, video rendering, TTS and MP4 storage have not been tested/implemented in this phase.
 - Phase 3-B: local rendering engine/CLI with six HTML/SVG renderers, network-denied Playwright capture, macOS Korean TTS, FFmpeg encode/probe/decode, concurrency/time/disk limits and failure cleanup. See `PHASE3B_NOTES.md` for actual MP4 evidence. No rendering-job API or UI is added.
+- Phase 3-C: implemented bounded single-runner web queue/API/UI, session ownership, Range streaming/download, acknowledged process cancellation, TTL/storage cleanup and reload recovery. See `PHASE3C_NOTES.md` for mock-AI/real-MP4 browser evidence. One server process; restart discards old web jobs/files.
 - See `PHASE2_NOTES.md` and README for earlier real-call evidence, free-tier/age/data-use limitations and setup.
 
 ## Phase 0 — repository inspection
@@ -33,7 +34,7 @@
 ## Phase 3 — independent shorts pipeline
 - Phase 3-A: `POST /api/storyboard`, StoryboardSpec, six allowlisted visualization types, timing/reference/source validation, separate prompt/schema/cache, and opt-in live-check script. Existing HTML/shorts API behavior is unchanged.
 - Phase 3-B: independent synchronous local renderer consumes validated storyboards. 1080×1920 default, 540×960 preview, H.264/AAC, local Korean narration with explicit fit/error policy, disposable worker, no generated executable code.
-- Phase 3-C (future): asynchronous job requests, progress, cancellation, scoped storage/export and UI integration.
+- Phase 3-C: asynchronous `/api/videos` requests, real stage/frame progress, cancellation of worker/descendants, owned storage/export and UI integration. Memory-only job state; bounded retention and explicit restart policy.
 - Generate storyboard/script separately from HTML.
 - Render vertical animation using programmatic motion graphics, add narration using a verified TTS service, encode with FFmpeg.
 - Add background job handling, progress, export and failure fallback.

@@ -47,6 +47,6 @@ async def learn(request: Request, settings: Settings = Depends(get_settings)):
             raise LearningError("consent_required", "Gemini 전송 안내를 확인해 주세요. 질문과 PDF 추출 텍스트가 Google Gemini에 전송될 수 있어요. 무료 티어에는 개인정보·민감정보를 보내지 마세요.", 428, False)
         material, data = await read_upload(form.get("file"))
         if fields["format"] == "shorts":
-            # Phase 3 remains unimplemented: never call AI for an existing video.
+            # Preserve the legacy sample response. New generation uses /api/videos.
             return build_sample_video(fields["concept"], fields["question"], material)
         return await create_learning(settings, fields["concept"], fields["question"], material, data)

@@ -75,9 +75,9 @@ with sync_playwright() as p:
 
     page.locator('#edit-input').click()
     page.get_by_role('radio',name='숏츠 학습',exact=False).check()
-    page.locator('#generate').click()
+    page.locator('#shorts-sample').click()
     expect(page.locator('#video-view')).to_be_visible()
-    expect(page.locator('#video-note')).to_contain_text('새로 만든 9:16 숏츠가 아니며')
+    expect(page.locator('#video-note')).to_contain_text('새 생성 아님')
     page.wait_for_function("document.querySelector('#result-video').readyState >= 2")
     metadata = page.locator('#result-video').evaluate('(v)=>({width:v.videoWidth,height:v.videoHeight,duration:v.duration})')
     assert metadata['width'] > metadata['height'] > 0

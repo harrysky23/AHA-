@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 import resource
 import sys
+import os
+import time
+
+from .processes import watch_parent
 
 from ..storyboard_schema import StoryboardSpec
 from ..services.validation import load_json
@@ -39,10 +43,10 @@ def render(work: Path, options: RenderOptions):
     resource.setrlimit(resource.RLIMIT_FSIZE, (options.max_disk_bytes, options.max_disk_bytes))
     budget = Budget(work, options)
     spec = StoryboardSpec.model_validate(load_json((work / "input.json").read_text(encoding="utf-8")))
-    def progress(scene_id, phase):
+    def progress(scene_id, phase, **detail):
         # Atomic replace avoids exposing partial JSON to the parent on failure.
         p = work / "progress.tmp"
-        p.write_text(json.dumps({"scene_id": scene_id, "phase": phase}), encoding="utf-8")
+        p.write_text(json.dumps({"scene_id": scene_id, "phase": phase, **detail}), encoding="utf-8")
         p.replace(work / "progress.json")
     audio, timings = build_narration(spec, work, budget, MacOSSay(), lambda scene_id: progress(scene_id, "tts"))
     frames = work / "frames"
@@ -55,7 +59,7 @@ def render(work: Path, options: RenderOptions):
             seconds = index/options.fps
             scene = next(s for s in spec.scenes if s.start_seconds <= seconds < s.end_seconds)
             budget.scene_id = scene.id
-            progress(scene.id, "frames")
+            progress(scene.id, "frames", frames_done=index, frames_total=frame_count)
             png, state = renderer.frame(seconds)
             (frames / f"{index:06d}.png").write_bytes(png)
             budget.check()
@@ -74,6 +78,7 @@ def render(work: Path, options: RenderOptions):
                  "-movflags", "+faststart", "-map_metadata", "-1", str(output)], budget, "encode_failed")
     media = verify_media(probe(output, budget), spec, options)
     # Decode the entire result, not just inspect the container headers.
+    progress(None, "verify", frames_done=frame_count, frames_total=frame_count)
     run_process([executable("ffmpeg"), "-nostdin", "-v", "error", "-xerror", "-i", str(output),
                  "-f", "null", "-"], budget, "decode_failed")
     report = {"renderer_version": "html-svg-1", "schema_version": spec.schema_version,
@@ -86,6 +91,18 @@ def render(work: Path, options: RenderOptions):
 if __name__ == "__main__":
     work = Path(sys.argv[1])
     try:
+        # Parent writes this gate immediately after registering the process.
+        # An orphan cannot start rendering before registration; later parent
+        # death also terminates detached browser descendants via the watchdog.
+        deadline = time.monotonic() + 5
+        while not (work / "parent.json").exists():
+            if time.monotonic() > deadline:
+                raise SystemExit(1)
+            time.sleep(.05)
+        expected_parent = json.loads((work / "parent.json").read_text())["parent_pid"]
+        if os.getppid() != expected_parent:
+            raise SystemExit(1)
+        watch_parent(expected_parent)
         options = RenderOptions(**json.loads((work / "options.json").read_text()))
         render(work, options)
     except RenderError as exc:

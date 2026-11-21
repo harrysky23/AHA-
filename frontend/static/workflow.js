@@ -25,13 +25,26 @@
     $('generation-mode').textContent = isGemini ? 'Gemini AI · 검증된 그래프 컴포넌트' : mode === 'elice' ? 'Elice · 향후 연결 예정' : 'mock · 고정 수학 예제, AI 아님';
     $('mode-note').textContent = isGemini ? '성인 개발·평가용 Gemini 모드예요. 질문과 PDF 추출 텍스트로 설명을 구성하며 같은 입력은 캐시를 재사용해요.' : mode === 'elice' ? 'Elice는 실제 API 사양 확정 후 연결할 예정이에요. 현재 네트워크 호출은 하지 않아요.' : 'mock 모드는 질문과 관계없이 고정 수학 II 예제를 사용해요. 실제 AI 분석이나 학습 수준 진단은 아니에요.';
     $('request-status').textContent = mode === 'elice' ? 'Elice는 아직 연결되지 않았어요. mock 또는 gemini로 설정해 주세요.' : !configured ? 'Gemini 인증 설정이 준비되지 않았어요. 서버 .env의 API 키를 확인해 주세요.' : isGemini ? 'Gemini 전송 안내를 확인한 뒤 학습 결과를 열어 주세요.' : 'mock 모드에서는 API 키 없이 체험할 수 있어요.';
-    $('consent-option').hidden = !isGemini || form.elements.format.value !== 'html';
+    $('consent-option').hidden = !isGemini;
     const banner = document.querySelector('.phase-banner');
-    if (banner) banner.textContent = isGemini ? 'Phase 2 · 성인 개발·평가용 Gemini AI + 수학 II 학습. 새 숏츠 생성은 준비 중입니다.' : mode === 'elice' ? 'Elice 연결은 준비 중입니다. 기존 수학 데모와 예시 영상은 계속 이용할 수 있어요.' : 'Phase 2 · mock 고정 예제 모드입니다. 실제 AI 호출은 하지 않습니다.';
+    if (banner) banner.textContent = isGemini ? '성인 개발·평가용 Gemini AI · 인터랙티브 학습과 새 숏츠 생성' : mode === 'elice' ? 'Elice 연결은 준비 중입니다. 기존 데모와 예시 영상을 이용할 수 있어요.' : 'mock 스토리보드 + 실제 로컬 영상 렌더링 · 외부 AI 호출 없음';
+    updateFormat();
+  }
+  function updateFormat() {
+    const shorts=form.elements.format.value==='shorts';
+    $('consent-option').hidden=serverMode!=='gemini';
+    $('shorts-options').hidden=!shorts;
+    $('scope-title').textContent=shorts?'핵심 개념을 장면으로 연결해요':'이번에는 이 개념을 배워요';
+    $('scope-description').textContent=shorts?'수학·과학·사회·정보 개념을 30–60초의 세로형 영상으로 구성해요. 어려운 표현은 텍스트 설명으로 바꿀 수 있어요.':'수학 II · f(x)=x², 점 P(1,1)에서 할선의 기울기 2+h → 접선의 기울기 2';
+    $('mode-note').textContent=serverMode==='gemini'?'질문과 PDF 추출 텍스트로 설명을 구성하며 같은 입력의 생성 명세는 캐시를 재사용해요.':serverMode==='elice'?'Elice는 실제 API 사양 확정 후 연결할 예정이에요.':shorts?'mock은 네 가지 개념의 스토리보드 예제를 실제 영상으로 만들어요. AI 분석 결과가 아니에요.':'mock은 질문과 관계없이 고정 수학 II 예제를 사용해요. AI 분석 결과가 아니에요.';
+    $('question-note').textContent=shorts?'개념이나 질문 중 하나를 입력해 주세요. mock 예제: 미분계수, 물의 순환, 수요와 공급, 이진 탐색.':'개념이나 질문 중 하나를 입력해 주세요. 수학 II 미분계수·할선→접선 질문을 우선 지원해요.';
+    submit.disabled=busy || (shorts && window.AHAVideo?.active===true);
+    submit.textContent=shorts?'나만의 숏츠 만들기 →':'학습 결과 열기 →';
   }
   form.querySelectorAll('[name=format]').forEach(input => input.addEventListener('change', () => {
-    $('consent-option').hidden = serverMode !== 'gemini' || form.elements.format.value !== 'html';
+    updateFormat();
   }));
+  window.addEventListener('aha:video-active',updateFormat);
   fetch('/api/health').then(response => {
     if (!response.ok) throw new Error('health');
     return response.json();
@@ -128,6 +141,10 @@
     });
   }
   $('fallback').addEventListener('click', fallback);
+  window.addEventListener('aha:sample-video',()=>render({mode:'local_demo',format:'shorts',title:'미분계수 · 기존 예시 영상',
+    request:{concept:$('concept').value.trim(),question:$('question').value.trim()},material:null,
+    notice:'기존 시안에 포함된 예시 영상이에요. 새로 생성한 결과가 아니에요.',grounding:{message:'입력한 질문과 자료는 이 예시 영상에 사용하지 않아요.'},
+    video:{url:'/static/media/derivative-explainer.mp4',notice:'기존 예시 영상 · 새 생성 아님'}}));
   $('switch-html').addEventListener('click', () => {
     form.elements.format.value = 'html';
     $('consent-option').hidden = serverMode !== 'gemini';
@@ -146,7 +163,7 @@
     const concept = $('concept').value.trim();
     const question = $('question').value.trim();
     if (!concept && !question) { showError('어려운 개념 또는 질문을 입력해 주세요. 예시 질문도 사용할 수 있어요.'); $('concept').focus(); return; }
-    if (serverMode === 'gemini' && form.elements.format.value === 'html' && !$('external-consent').checked) {
+    if (serverMode === 'gemini' && !$('external-consent').checked) {
       showError('Gemini 전송 안내를 확인하고 체크해 주세요.');
       $('external-consent').focus(); return;
     }
@@ -154,15 +171,22 @@
     body.set('concept', concept); body.set('question', question); body.set('format', form.elements.format.value);
     if ($('external-consent').checked) body.set('consent', 'true');
     if (fileInput.files[0]) body.set('file', fileInput.files[0]);
+    const isShorts=form.elements.format.value==='shorts';
+    if (isShorts) { body.set('student_level',$('video-level').value); body.set('target_duration_seconds',$('video-duration').value); }
     busy = true; submit.disabled = true;
     form.setAttribute('aria-busy', 'true');
-    const controls = [...form.querySelectorAll('input,textarea,button')].filter(el => el !== submit);
+    const controls = [...form.querySelectorAll('input,textarea,button,select')].filter(el => el !== submit);
     controls.forEach(el => { el.disabled = true; });
     $('learning-result').hidden = true; $('result-video').pause(); $('lesson-view').replaceChildren();
     submit.textContent = '학습 결과 불러오는 중…'; $('request-status').textContent = '로컬 서버에서 입력을 확인하고 있어요.';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMilliseconds);
     try {
+      if (isShorts) {
+        await window.AHAVideo.start(body);
+        $('request-status').textContent='영상 생성 요청을 접수했어요. 아래 카드에서 진행 상태를 확인해 주세요.';
+        return;
+      }
       const response = await fetch('/api/learn', {method:'POST', body, signal:controller.signal});
       const data = await response.json();
       if (!response.ok) {
@@ -174,12 +198,13 @@
       render(data);
       $('request-status').textContent = '학습 결과를 열었어요. 아래에서 학습을 시작해 보세요.';
     } catch (error) {
-      showError(error.name === 'AbortError' ? '응답 시간이 초과됐어요. 다시 시도하거나 기본 예제를 열어 주세요.' : '로컬 서버에 연결하지 못했거나 응답을 읽을 수 없어요. 서버 실행 상태를 확인해 주세요.', true);
+      if (error.code==='consent_required') updateMode('gemini');
+      showError(error.code ? error.message : error.name === 'AbortError' ? '응답 시간이 초과됐어요. 다시 시도하거나 기본 예제를 열어 주세요.' : '로컬 서버에 연결하지 못했거나 응답을 읽을 수 없어요. 서버 실행 상태를 확인해 주세요.', true);
       $('request-status').textContent = '연결 후 다시 시도할 수 있어요.';
     } finally {
       clearTimeout(timeout); busy = false; submit.disabled = false;
       controls.forEach(el => { el.disabled = false; });
-      form.removeAttribute('aria-busy'); submit.textContent = '학습 결과 열기 →';
+      form.removeAttribute('aria-busy'); updateFormat();
     }
   });
 })();

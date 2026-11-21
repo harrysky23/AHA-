@@ -26,11 +26,15 @@ def storyboard_cache_key(settings: Settings, provider, request: StoryboardInput)
 
 async def create_storyboard(settings: Settings, concept: str, question: str, material: dict | None,
                             file_data: bytes | None, target_duration_seconds: int = 45,
-                            student_level: str = "high_school") -> dict:
+                            student_level: str = "high_school", *, on_stage=None) -> dict:
     request_id = uuid4().hex
     logger.info("request_id=%s mode=%s task=storyboard event=start",request_id,settings.mode)
     try:
+        if on_stage:
+            on_stage("analyzing")
         context = await analyze_material(file_data,material["content_type"] if material else None)
+        if on_stage:
+            on_stage("storyboard")
         # Keep Phase 2's material response text unchanged; only this endpoint is general.
         if context.status == "no_material":
             context.message = "학습 자료 없이 입력한 개념·질문으로 스토리보드를 구성해요. 자료가 없는 가정은 별도로 표시해요."

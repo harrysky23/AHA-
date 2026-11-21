@@ -24,7 +24,8 @@ Turn the student's study material and difficult concept into a personalized, vis
 ## Output B: independent learning short (slides 6, 9, 11)
 - Phase 3-A implements only the independent storyboard JSON stage: generic concepts, a 30–60 second/9:16 scene specification and six allowlisted visualization types. It uses a separate schema, prompt and cache from the Math II HTML path.
 - Phase 3-B adds a local synchronous renderer: vetted HTML/SVG components -> Playwright frames -> macOS Korean speech -> FFmpeg H.264/AAC MP4. Six visualization types, deterministic timeline, bounded worker execution and text fallback are implemented separately from the HTML lesson.
-- `/api/learn` shorts still provides the existing sample video; `/api/storyboard` returns JSON only. Rendering jobs/progress/download UI remain Phase 3-C work. Local CLI output is not a public video storage service.
+- Phase 3-C connects the independent pipeline to the existing web form through session-owned asynchronous `/api/videos` jobs: queue, actual stages, cancellation, protected Range streaming, playback/download and expiry. Gemini generation requires consent; ordinary verification uses mock storyboards and the real local renderer.
+- `/api/learn` shorts still provides the existing sample video for compatibility; `/api/storyboard` returns JSON only. New web generation uses `/api/videos`. Job state is process-local, bounded, and discarded with web files on server restart. Browser reload recovery uses an opaque HttpOnly ownership cookie plus only the last job ID in localStorage.
 - 9:16 vertical video, target 30–60 seconds.
 - Pipeline: AI script/storyboard -> programmatic animation -> TTS -> FFmpeg encode/export.
 - NOT a recording of the interactive HTML screen.

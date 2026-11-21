@@ -10,11 +10,14 @@ import subprocess
 import sys
 import tempfile
 import time
+from threading import Event
+from typing import Callable
 
 from pydantic import ValidationError
 
 from ..storyboard_schema import StoryboardSpec
 from .core import Budget, RenderError, RenderOptions, executable
+from .processes import ProcessTree
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -51,7 +54,8 @@ def _stop(process):
     process.wait()
 
 
-def render_storyboard(value, output: Path, options: RenderOptions | None = None) -> dict:
+def render_storyboard(value, output: Path, options: RenderOptions | None = None, *,
+                      cancel_event: Event | None = None, on_progress: Callable[[dict], None] | None = None) -> dict:
     """Render a validated spec to a local file. Never reads .env or calls AI.
 
     No source-grounding claim: quote matching belongs to the generation service
@@ -59,6 +63,10 @@ def render_storyboard(value, output: Path, options: RenderOptions | None = None)
     """
     spec = validate_spec(value)
     options = options or RenderOptions()
+    def check_cancel():
+        if cancel_event is not None and cancel_event.is_set():
+            raise RenderError("render_cancelled", "영상 생성을 취소했어요.")
+    check_cancel()
     output = Path(output).resolve()
     if output.suffix.lower() != ".mp4":
         raise RenderError("invalid_output", "출력 파일 확장자는 .mp4여야 해요.")
@@ -78,19 +86,41 @@ def render_storyboard(value, output: Path, options: RenderOptions | None = None)
             env = {k: v for k, v in os.environ.items() if k in {"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "AHA_BROWSER_EXECUTABLE"}}
             env["PYTHONPATH"] = str(ROOT)
             env["PYTHONDONTWRITEBYTECODE"] = "1"
+            runtime_tmp = work / "runtime-tmp"
+            runtime_tmp.mkdir(mode=0o700)
+            # Include Playwright/Chromium profiles in the job's disk budget and
+            # cleanup, even when cancellation skips browser.close().
+            env["TMPDIR"] = str(runtime_tmp)
             process = subprocess.Popen([sys.executable, "-m", "backend.app.rendering.worker", str(work)],
                 cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 shell=False, start_new_session=True)
+            tree = ProcessTree(process.pid)
+            tracking_ready = False
             try:
+                try:
+                    tree.capture()
+                    tracking_ready = True
+                except PermissionError:
+                    raise RenderError("process_tracking_denied", "자식 프로세스를 확인할 권한이 없어 안전하게 렌더링을 시작할 수 없어요.") from None
+                parent_file = work / "parent.tmp"
+                parent_file.write_text(json.dumps({"parent_pid": os.getpid()}))
+                parent_file.replace(work / "parent.json")
+                last_progress = None
                 while process.poll() is None:
+                    check_cancel()
+                    tree.capture()
                     try:
                         progress = json.loads((work / "progress.json").read_text())
                         budget.scene_id = progress.get("scene_id")
+                        if progress != last_progress and on_progress:
+                            on_progress(progress)
+                            last_progress = progress
                     except (OSError, ValueError):
                         pass
                     budget.check()
                     time.sleep(.1)
                 budget.check()
+                check_cancel()
                 if process.returncode:
                     try:
                         failure = json.loads((work / "error.json").read_text())
@@ -98,6 +128,7 @@ def render_storyboard(value, output: Path, options: RenderOptions | None = None)
                         raise RenderError("worker_failed", "렌더링 프로세스가 비정상 종료됐어요.", budget.scene_id) from None
                     raise RenderError(failure["code"], failure["message"], failure.get("scene_id") or budget.scene_id)
                 report = json.loads((work / "report.json").read_text())
+                check_cancel()
                 # Publish only after successful encode, probe and complete decode.
                 # Hard links provide no-overwrite semantics even if a local file
                 # appears after the initial existence check. Same filesystem.
@@ -111,4 +142,13 @@ def render_storyboard(value, output: Path, options: RenderOptions | None = None)
             finally:
                 # Also reap remaining descendants when the worker itself has
                 # already crashed/exited; they may still own the process group.
-                _stop(process)
+                try:
+                    clean = tree.stop() if tracking_ready else True
+                    if not tracking_ready:
+                        _stop(process)
+                    process.wait()
+                except Exception:
+                    _stop(process)
+                    raise RenderError("cleanup_failed", "렌더링 프로세스 정리를 확인하지 못했어요.", budget.scene_id) from None
+                if not clean:
+                    raise RenderError("cleanup_failed", "렌더링 자식 프로세스 종료를 확인하지 못했어요.", budget.scene_id)

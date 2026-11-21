@@ -1,12 +1,81 @@
-# AHA! (아하!) · Phase 3-B
+# AHA! (아하!) · Phase 3-C
 
 기존 랜딩·수학·사회 데모를 유지하고 FastAPI에 **자료 업로드 → 질문 → 학습 방식 → JSON 학습 명세 → 인터랙티브 학습**을 연결했습니다.
 
-HTML 학습의 지원 개념은 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수**입니다. AI는 설명·수준·예제·확인 문제를 JSON으로 만들고, 검증된 로컬 HTML/JS 컴포넌트가 그래프를 계산합니다. Phase 3-A는 별도의 범용 영상 스토리보드 JSON을, Phase 3-B는 **HTML/SVG → Playwright → 로컬 한국어 TTS → FFmpeg MP4** 엔진을 추가합니다. AI 코드는 실행하지 않으며 영상 생성 작업 UI·진행률 API는 Phase 3-C 범위입니다.
+HTML 학습의 지원 개념은 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수**입니다. Phase 3-A의 범용 스토리보드와 Phase 3-B의 **HTML/SVG → Playwright → 로컬 한국어 TTS → FFmpeg MP4**를 Phase 3-C에서 웹에 연결했습니다. 이제 **자료·질문 → 숏츠 학습 → 생성 상태 → 실제 MP4 재생·다운로드**가 작동합니다. AI 코드는 실행하지 않습니다.
+
+## Phase 3-C · 웹에서 숏츠 만들기
+
+먼저 아래 Phase 3-B 항목의 로컬 음성·Chrome/Chromium·FFmpeg 의존성을 준비하세요. `.env`의 Gemini 키를 그대로 보존하며 설정 예시는 `.env.example`에 있습니다.
+
+```bash
+source .venv/bin/activate
+python -m pip install -r requirements-render.txt
+
+# 개발·심사용: 실제 AI 호출 없이 mock 스토리보드 + 실제 한국어 MP4
+AHA_AI_PROVIDER=mock AHA_VIDEO_PREVIEW=true AHA_VIDEO_FPS=3 \
+  python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8766 --workers 1
+
+# .env의 Gemini 설정으로 실행. 사용자가 동의한 새 작업만 실제 AI를 호출합니다.
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765 --workers 1
+```
+
+접속 후 개념·질문과 선택적인 PDF를 입력하고 **숏츠 학습**을 고릅니다. 설명 수준과30/45/60초를 선택해 생성합니다. Gemini 모드에서는 Google 전송 동의가 필수이며 기존 무료 티어·성인 평가용 제한은 아래 안내와 동일합니다. mock은 미분계수·물의 순환·수요와 공급·이진 탐색 예제를 실제로 렌더링합니다. mock 성공을 AI 생성 성공으로 표시하지 않습니다.
+
+UI는 자료 분석·영상 구성·음성/애니메이션·인코딩·검사·완료를 표시합니다. 프레임 수는 worker가 기록한 실제 캡처 수이며 전체 진행 퍼센트나 완료 예상 시간은 제공하지 않습니다. 실패하면 구성/렌더링 단계와 오류 코드를 표시하고 재시도·기존 예시 영상 보기를 제공합니다. 새 영상은9:16 플레이어에서 재생하고 MP4로 다운로드할 수 있습니다. 기존 인터랙티브 학습과 원본 데모는 유지합니다.
+
+| API | 동작 |
+| --- | --- |
+| `POST /api/videos` | multipart 입력 검증 후202 + job_id. PDF 분석·AI·렌더링 완료를 기다리지 않음 |
+| `GET /api/videos/{job_id}` | queued/generating/rendering/completed/failed/cancelled, stage, 실제 progress, error, 만료 시각. 완료 시 video_url |
+| `GET /api/videos/{job_id}/file` | 소유권과 완료 상태 확인 후MP4만 제공. Range206/416·스트리밍·`?download=1` 지원 |
+| `DELETE /api/videos/{job_id}` | 대기 작업 즉시 취소. 실행 중이면202 + cancel_requested, 실제 종료·정리 후 cancelled. 완료 영상은 삭제 |
+
+입력은 `concept`(200자), `question`(2000자), 선택적 `file`(기존5MiB 제한), `consent=true`(Gemini 필수), `student_level`(foundation/high_school/advanced), `target_duration_seconds`(30–60 정수, 기본45)입니다. 기존 폼의 `format=shorts`도 허용합니다. `/api/learn`의 기존 샘플 영상 응답과 `/api/storyboard`의 JSON 응답은 호환성을 유지합니다.
+
+```bash
+# mock 서버 예시. cookie jar도 비밀 값이므로 tmp/ 밖으로 공유하지 마세요.
+curl -c tmp/video-cookies.txt -X POST http://127.0.0.1:8766/api/videos \
+  -F 'concept=물의 순환' -F 'question=증발과 응결의 연결을 설명해 주세요.' \
+  -F 'target_duration_seconds=30' -F 'student_level=high_school'
+curl -b tmp/video-cookies.txt http://127.0.0.1:8766/api/videos/JOB_ID
+curl -b tmp/video-cookies.txt -H 'Range: bytes=0-31' \
+  http://127.0.0.1:8766/api/videos/JOB_ID/file
+curl -b tmp/video-cookies.txt -X DELETE http://127.0.0.1:8766/api/videos/JOB_ID
+```
+
+작업 소유권은 서버가 발급한256bit 임의 쿠키로 확인합니다. HttpOnly·SameSite=Strict이며 HTTPS에서는 Secure, 경로는 `/api/videos`, 쿠키 수명은24시간입니다. 서버는 소유자 해시만 저장하고 job_id만 아는 다른 세션에는 상태·파일·삭제 모두404를 반환합니다. 토큰을 URL·localStorage·일반 로그에 넣지 않습니다. 변경 요청의 다른 Origin/cross-site도 거절합니다. 이는 로컬 PoC용 익명 세션이며 사용자 계정 인증이나 인터넷 공개 서비스의 권한 체계를 대신하지 않습니다.
+
+**복구·취소·삭제 정책:** 브라우저를 닫아도 작업은 계속되며 localStorage에는 질문/자료 없이 마지막 job_id만 저장합니다. 같은 origin·쿠키로 다시 열면 작업을 조회합니다. 다른 브라우저·쿠키 삭제·만료 시에는 복구할 수 없습니다. 서버 상태는 메모리이므로 **서버 재시작·종료 시 모든 작업과 웹 영상은 폐기**하며 이전 ID는404입니다. 정상 종료는 실행 작업의 취소를 기다린 뒤 정리하고, 갑작스러운 부모 종료는 worker watchdog이 자식까지 종료합니다. 다음 시작에서 전용 저장소의 이전 작업 폴더를 제거합니다. CLI 영상 폴더는 건드리지 않습니다.
+
+취소 요청을 받았다는 이유만으로 cancelled로 바꾸지 않습니다. 취소 신호를 렌더러에 전달하고 worker 및 분리된 Chrome 자식을 PID/생성 시각으로 추적해 종료·정리한 뒤 확정합니다. 종료 확인 실패는 `cleanup_failed`입니다. 완료와 취소가 경합하면 서버 루프에서 먼저 반영된 순서대로 처리하며, 취소가 요청된 결과는 공개하지 않습니다. 이미 시작된 소유자의 다운로드는 끝날 수 있고 파일은 마지막 스트림이 끝난 후 삭제합니다.
+
+| 환경변수 | 기본값·범위 |
+| --- | --- |
+| AHA_VIDEO_QUEUE_LIMIT | 대기3개,1–8 |
+| AHA_VIDEO_MAX_JOBS | 전체 기록16개,대기 한도+1 이상·최대64 |
+| AHA_VIDEO_TTL_SECONDS | 생성 시점부터3600초,120–7200. 완료·실패·취소 기록에도 적용 |
+| AHA_VIDEO_RUN_SECONDS | 시작 후 전체 처리900초,10–1800 |
+| AHA_VIDEO_STORAGE_MB | 전용 저장소2048MiB,512–4096. 다음 렌더링 예산을 확보할 수 없으면 거절 |
+| AHA_VIDEO_PREVIEW | false(1080×1920). true이면540×960 |
+| AHA_VIDEO_FPS | 30,1–30. 개발 검증 권장3 |
+| AHA_VIDEO_RENDER_TIMEOUT_SECONDS | Phase 3-B 렌더러600초,10–1800 |
+| AHA_VIDEO_MAX_DISK_MB | Phase 3-B 작업별512MiB,1–2048 |
+
+실행기는1개이며 한 세션에서 동시에2개까지만 접수합니다. 기존 전역 렌더 잠금이 CLI에 잡혀 있으면 AI를 재호출하지 않고 제한 시간 안에서 기다립니다. 대기열/기록 한도는429, 저장 공간 부족은507입니다. 실패·취소 기록은 전체 기록 한도에 도달하면 먼저 제거될 수 있습니다. 전용 저장소는 `tmp/video-jobs`(권한0700)이고 static으로 공개하지 않습니다. 브라우저 임시 프로필도 작업 폴더 안에 둬 용량 제한·정리에 포함합니다. 이 설정은 서버 시작 때 읽으므로 변경하려면 재시작해야 합니다.
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q                     # 기본 mock/HTTP 대역, 실제 Gemini/MP4 미실행
+AHA_BASE_URL=http://127.0.0.1:8766 python tests/browser_phase3c.py
+# 위 브라우저 검증만 실제 로컬 TTS·MP4 생성/취소. 서버는 반드시 mock이어야 함
+```
+
+프로세스 종료 검증에는 macOS의 자식 프로세스 조회 권한이 필요합니다. 제한된 실행 환경이 이를 거절하면 `process_tracking_denied`로 렌더링을 시작하지 않습니다. 실제 웹 검증 결과·경쟁 상태 테스트·남은 범위는 [Phase 3-C 기록](docs/PHASE3C_NOTES.md)을 참조하세요.
 
 ## Phase 3-B · 로컬 학습 영상 렌더링
 
-macOS의 로컬 `Yuna` 음성, Chrome 또는 Playwright Chromium, FFmpeg/ffprobe가 필요합니다. 영상·TTS 유료 API를 호출하지 않으며 렌더링 스크립트는 `.env`를 읽지 않습니다.
+macOS의 로컬 `Yuna` 음성, Chrome 또는 Playwright Chromium, FFmpeg/ffprobe가 필요합니다. 영상·TTS 유료 API를 호출하지 않으며 렌더링 스크립트는 `.env`를 읽지 않습니다. 아래는 독립 CLI 엔진의 실행 방법이며 웹 작업은 위 Phase 3-C 경로를 사용합니다.
 
 ```bash
 source .venv/bin/activate
@@ -48,7 +117,7 @@ python scripts/render_storyboard.py --input tmp/storyboard.json --preview --fps 
 
 렌더링은 장면의 폰트·템플릿·브라우저 환경을 고정한 로컬 작업입니다. macOS에서는 네트워크 없이 시스템 `Apple SD Gothic Neo`를 사용하고 AHA!의 보라·노랑·분홍 팔레트를 재사용합니다. 원본 Google Fonts를 원격으로 받지 않습니다. 브라우저/OS/설치 폰트가 달라도 동일 파일 해시를 보장하는 것은 아니며, 브라우저 설정만으로 OS 보안 격리를 완성했다고 주장하지 않습니다.
 
-원문 자료와 인용의 의미·전체 사실성은 렌더링 검증 대상이 아닙니다. PDF 인용 일치는 Phase 3-A 생성 서비스에서 확인하며 렌더러는 DSL·시간·참조를 검사합니다. 공개 서비스의 사용자별 작업 격리·저장 정책·취소·진행률·다운로드 UI는 Phase 3-C 이후에 추가해야 합니다. 기존 `/api/learn`과 `/api/storyboard`는 그대로이며, 스토리보드 API의 `rendering.status=not_implemented`는 **그 API에서 렌더링을 실행하지 않는다**는 기존 응답을 유지한 것입니다.
+원문 자료와 인용의 의미·전체 사실성은 렌더링 검증 대상이 아닙니다. PDF 인용 일치는 Phase 3-A 생성 서비스에서 확인하며 렌더러는 DSL·시간·참조를 검사합니다. 기존 `/api/learn`과 `/api/storyboard`는 그대로이며, 스토리보드 API의 `rendering.status=not_implemented`는 **그 API에서 렌더링을 실행하지 않는다**는 기존 응답을 유지한 것입니다. 웹 생성·취소·다운로드는 별도 `/api/videos`를 사용합니다.
 
 ```bash
 python -m pytest -q                  # mock/HTTP 대역; AI·영상 생성 없음
@@ -275,7 +344,7 @@ python -m pytest -q
 node --check frontend/static/workflow.js
 ```
 
-일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 현재 전체183개가 통과했습니다. 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경과 렌더링 정책을 확인합니다.
+일반 테스트는 mock·HTTP 대역을 사용하며 실제 API를 호출하지 않습니다. 현재 전체206개가 통과했습니다. 기존 데모·키 비노출·PDF·Gemini 요청·실패·스키마·수학·인용·캐시 TTL/LRU/동시 중복·모델·프롬프트 변경과 렌더링·작업 정책을 확인합니다. 일부 프로세스 제어 테스트는 무해한 실제 대역 프로세스를 생성·종료하며 Chrome/TTS/MP4를 실행하지 않습니다.
 
 Phase 3-A의155개에 Phase 3-B의 렌더링 정책·음성 길이·시간/디스크 제한·실패 정리·키 상속 방지 검사를 추가했습니다. 실제 브라우저·TTS·MP4 검증은 위 명시적 명령으로 분리하며 일반 pytest에서 실행하지 않습니다.
 
@@ -323,8 +392,13 @@ backend/app/
     materials.py, pdf_worker.py
     storyboard*.py          스토리보드 생성·mock·독립 프롬프트·검증
     uploads.py              기존·신규 API의 공통 파일 검증
+    storyboard_input.py     스토리보드/영상 API의 공통 multipart 검증
+    video_jobs.py           제한된 비동기 대기열·상태·취소·만료·파일 lease
+  video_config.py           웹 영상 정책·렌더링 옵션
   routes/storyboard.py      POST /api/storyboard
+  routes/videos.py          생성/조회/취소/소유권 검증 파일 스트리밍
 frontend/                   기존 랜딩·폼·격리된 그래프
+frontend/static/video-jobs.js 생성 작업 폴링·복구·취소·세로형 플레이어
 scripts/prepare_frontend.py  원본 + 폼으로 실행 HTML 재구성
 scripts/check_gemini.py      명시적 실제 호출 검증
 scripts/check_storyboard.py  기본 mock / 명시적 --live 스토리보드 검증

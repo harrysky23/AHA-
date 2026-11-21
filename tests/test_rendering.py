@@ -3,6 +3,10 @@ import json
 from pathlib import Path
 import sys
 import time
+import subprocess
+from threading import Event
+
+import psutil
 
 import pytest
 
@@ -170,3 +174,48 @@ def test_invalid_media_dimensions_duration_and_audio():
         with pytest.raises(RenderError): verify_media(altered,story(),RenderOptions(preview=True,fps=3))
     value['streams'].pop()
     with pytest.raises(RenderError): verify_media(value,story(),RenderOptions(preview=True,fps=3))
+
+
+def test_cancel_stops_detached_child_before_returning(tmp_path,monkeypatch):
+    cancel=Event()
+    # Fixed test code only. A detached descendant must not survive group kill.
+    body="import subprocess\np=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'],start_new_session=True)\n(w.parent/'child-pid').write_text(str(p.pid))\n(w/'progress.json').write_text(json.dumps({'phase':'frames','scene_id':'scene_1'}))\ntime.sleep(60)\n"
+    fake_worker(tmp_path,monkeypatch,body)
+    # The fake launcher must invoke the real Python for its own child.
+    launcher=Path(sys.executable)
+    original=launcher.read_text().splitlines()[0][2:]
+    launcher.write_text(launcher.read_text().replace("[sys.executable,'-c'",f"[{original!r},'-c'"))
+    with pytest.raises(RenderError) as error:
+        render_storyboard(story(),tmp_path/'cancel.mp4',cancel_event=cancel,on_progress=lambda _:cancel.set())
+    assert error.value.code=='render_cancelled'
+    pid=int((tmp_path/'child-pid').read_text())
+    try:assert psutil.Process(pid).status()==psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:pass
+    assert not list(tmp_path.glob('.aha-render-*')) and not (tmp_path/'cancel.mp4').exists()
+
+
+def test_worker_watchdog_cleans_children_after_parent_death(tmp_path):
+    root=Path(__file__).resolve().parents[1]
+    worker=tmp_path/'watch-worker.py'
+    worker.write_text("import os,sys,time,subprocess,json\nfrom pathlib import Path\nfrom backend.app.rendering.processes import watch_parent\nwatch_parent(os.getppid())\nc=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'],start_new_session=True)\nPath(sys.argv[1]).write_text(json.dumps([os.getpid(),c.pid]))\ntime.sleep(60)\n")
+    parent=tmp_path/'watch-parent.py'
+    parent.write_text("import subprocess,sys,time\nsubprocess.Popen([sys.executable,sys.argv[1],sys.argv[2]],start_new_session=True)\ntime.sleep(60)\n")
+    import os
+    env={**os.environ,'PYTHONPATH':str(root)}
+    process=subprocess.Popen([sys.executable,str(parent),str(worker),str(tmp_path/'pids.json')],env=env,
+                             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    tracked=[]
+    try:
+        deadline=time.monotonic()+5
+        while not (tmp_path/'pids.json').exists():
+            assert time.monotonic()<deadline;time.sleep(.02)
+        tracked=[psutil.Process(pid)for pid in json.loads((tmp_path/'pids.json').read_text())]
+        process.kill();process.wait()
+        deadline=time.monotonic()+5
+        while any(p.is_running() and p.status()!=psutil.STATUS_ZOMBIE for p in tracked):
+            assert time.monotonic()<deadline;time.sleep(.05)
+    finally:
+        if process.poll() is None:process.kill();process.wait()
+        for child in tracked:
+            try:child.kill()
+            except psutil.NoSuchProcess:pass

@@ -192,7 +192,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
 <link rel="stylesheet" href="/static/workflow.css">
 </head>
 <body>
-<div class="phase-banner">Phase 2 · 서버 모드를 확인 중입니다. 수학 II 인터랙티브 학습과 기존 예시 영상을 제공합니다. 새 숏츠 생성은 준비 중입니다.</div>
+<div class="phase-banner">서버 모드를 확인 중입니다. 인터랙티브 학습과 세로형 숏츠 생성을 제공합니다.</div>
 
 <nav>
   <div class="wrap">
@@ -473,9 +473,17 @@ footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
         <fieldset class="format-options">
           <legend class="sr-only">학습 방식</legend>
           <label class="format-option"><input type="radio" name="format" value="html" checked><span><strong>인터랙티브 학습</strong><span>설명을 읽고 할선이 접선에 가까워지는 모습을 확인해요.</span><em id="generation-mode">모드 확인 중 · mock / Gemini</em></span></label>
-          <label class="format-option"><input type="radio" name="format" value="shorts"><span><strong>숏츠 학습</strong><span>미분계수를 설명하는 기존 예시 영상을 봐요.</span><em>기존 영상 · 새 숏츠 생성 준비 중</em></span></label>
+          <label class="format-option"><input type="radio" name="format" value="shorts"><span><strong>숏츠 학습</strong><span>질문과 자료로 구성한 세로형 학습 영상을 만들어요.</span><em>스토리보드 → 한국어 음성·애니메이션 → MP4</em></span></label>
         </fieldset>
-        <div class="scope-note"><strong>이번에는 이 개념을 배워요</strong><p>수학 II · f(x) = x²에서 점 P(1, 1)의 미분계수<br>할선의 기울기 2+h → 접선의 기울기 2</p><p id="mode-note">mock은 고정 예제, Gemini는 실제 모델로 설명을 구성해요. Elice는 향후 연결 예정이에요.</p></div>
+        <div id="shorts-options" hidden>
+          <label class="field-label" for="video-level">설명 수준</label>
+          <select id="video-level"><option value="foundation">기초부터</option><option value="high_school" selected>고등학교</option><option value="advanced">심화</option></select>
+          <label class="field-label" for="video-duration">영상 길이</label>
+          <select id="video-duration"><option value="30">30초</option><option value="45" selected>45초</option><option value="60">60초</option></select>
+          <p class="field-note">mock은 미분계수·물의 순환·수요와 공급·이진 탐색 예제를 사용해요. Gemini는 질문에 맞는 구성을 작성해요. 생성에는 시간이 걸리며 화면을 닫아도 작업은 계속돼요.</p>
+          <button id="shorts-sample" class="text-button" type="button">기존 예시 영상만 먼저 보기</button>
+        </div>
+        <div class="scope-note"><strong id="scope-title">이번에는 이 개념을 배워요</strong><p id="scope-description">수학 II · f(x) = x²에서 점 P(1, 1)의 미분계수<br>할선의 기울기 2+h → 접선의 기울기 2</p><p id="mode-note">mock은 고정 예제, Gemini는 실제 모델로 설명을 구성해요. Elice는 향후 연결 예정이에요.</p></div>
         <label id="consent-option" class="consent-option" hidden><input id="external-consent" type="checkbox"><span>성인 개발·평가용 Gemini 전송 안내를 확인했어요. 질문·개념·PDF 추출 텍스트가 Google에 전송될 수 있으며, 무료 티어 입력·출력은 제품 개선과 검토에 사용될 수 있어요. 개인정보·민감정보 없는 자료만 사용해요. 이미지 원본은 전송하지 않아요.</span></label>
         <button id="generate" class="btn btn-primary generate-button" type="submit">학습 결과 열기 →</button>
         <p id="request-status" class="field-note" role="status" aria-live="polite">서버의 학습 모드를 확인하고 있어요.</p>
@@ -483,6 +491,24 @@ footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
         <button id="fallback" type="button" class="btn btn-ghost" hidden>기본 수학 예제 바로 열기</button>
       </div>
     </form>
+    <section id="video-job" class="card result-card" hidden tabindex="-1" aria-labelledby="video-job-title">
+      <span class="eyebrow">나를 위한 숏츠</span><h3 id="video-job-title">학습 영상 만들기</h3>
+      <p id="video-job-stage" role="status" aria-live="polite"></p>
+      <p id="video-job-detail" class="field-note"></p>
+      <p id="video-job-error" class="error-message" role="alert" hidden></p>
+      <div class="video-actions">
+        <button id="video-cancel" class="btn btn-ghost" type="button">생성 취소</button>
+        <button id="video-retry" class="btn btn-primary" type="button" hidden>다시 생성하기</button>
+        <button id="video-resume" class="btn btn-ghost" type="button" hidden>상태 다시 확인</button>
+        <button id="video-sample" class="btn btn-ghost" type="button">기존 예시 영상 보기</button>
+      </div>
+      <div id="generated-video-view" hidden>
+        <p id="generated-video-note" class="honest-note"></p>
+        <video id="generated-video" controls playsinline preload="metadata" aria-label="새로 생성한 세로형 학습 영상"></video>
+        <div class="video-actions"><a id="video-download" class="btn btn-primary" download="aha-learning.mp4">MP4 다운로드 ↓</a><button id="video-delete" class="btn btn-ghost" type="button">이 영상 삭제</button></div>
+      </div>
+      <p id="video-job-retention" class="field-note">같은 브라우저에서는 새로고침 후 작업을 다시 확인할 수 있어요. 서버 재시작·만료·쿠키 삭제 시에는 복구할 수 없어요.</p>
+    </section>
     <noscript><p class="honest-note">학습 폼과 그래프를 사용하려면 JavaScript를 활성화해 주세요.</p></noscript>
     <div id="learning-result" class="card result-card" hidden tabindex="-1" aria-labelledby="result-title">
       <div class="result-heading"><div><span class="eyebrow" id="result-mode">로컬 예제</span><h3 id="result-title">수학 II · 할선에서 접선으로</h3></div><button id="edit-input" type="button" class="btn btn-ghost btn-sm">입력으로 돌아가기 ↑</button></div>
@@ -670,5 +696,6 @@ document.querySelectorAll('video[data-embed-econ]').forEach(v => {
 });
 </script>
 <script src="/static/workflow.js" defer></script>
+<script src="/static/video-jobs.js" defer></script>
 </body>
 </html>

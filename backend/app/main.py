@@ -2,6 +2,7 @@ import base64
 import hashlib
 from pathlib import Path
 import re
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -10,6 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from .config import ConfigurationError
 from .routes.learn import router
 from .routes.storyboard import router as storyboard_router
+from .routes.videos import router as videos_router
+from .services.video_jobs import VideoJobs
+from .video_config import get_video_settings
 from .services.errors import LearningError
 import logging
 
@@ -60,10 +64,23 @@ if not logging.getLogger("aha.generation").handlers:
     logging.getLogger("aha.generation").addHandler(handler)
     logging.getLogger("aha.generation").propagate = False
 
-app = FastAPI(title="AHA! Phase 2", version="0.2.0")
+@asynccontextmanager
+async def lifespan(app):
+    jobs = VideoJobs(get_video_settings())
+    await jobs.start()
+    app.state.video_jobs = jobs
+    try:
+        yield
+    finally:
+        await jobs.close()
+        app.state.video_jobs = None
+
+
+app = FastAPI(title="AHA!", version="0.3.0", lifespan=lifespan)
 app.add_middleware(BoundedBodyMiddleware)
 app.include_router(router)
 app.include_router(storyboard_router)
+app.include_router(videos_router)
 app.mount("/static", StaticFiles(directory=FRONTEND / "static"), name="static")
 
 
@@ -71,6 +88,8 @@ app.mount("/static", StaticFiles(directory=FRONTEND / "static"), name="static")
 async def learning_error(request, exc: LearningError):
     data = {"detail":exc.message, "code":exc.code, "fallback_available":exc.fallback}
     headers = {}
+    if request.url.path.startswith("/api/videos"):
+        headers["Cache-Control"] = "private, no-store"
     if exc.retry_after is not None:
         data["retry_after_seconds"] = exc.retry_after
         headers["Retry-After"] = str(exc.retry_after)
