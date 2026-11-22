@@ -518,6 +518,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
       <dl id="request-summary" class="request-summary"></dl>
       <p id="grounding-note" class="field-note"></p>
       <p id="verification-note" class="field-note" hidden></p>
+      <div id="background-tools" class="background-tools" hidden></div>
       <div id="lesson-view"></div>
       <div id="video-view" hidden><p id="video-note" class="honest-note"></p><video id="result-video" controls playsinline preload="metadata" aria-label="기존 미분계수 예시 영상"></video><button id="switch-html" type="button" class="btn btn-ghost">슬라이더로도 학습하기 →</button></div>
     </div>
@@ -697,7 +698,7 @@ document.querySelectorAll('video[data-embed-econ]').forEach(v => {
   if (v.autoplay) v.play().catch(() => {});
 });
 </script>
-<script src="/static/workflow.js?v=98dff225dc3a" defer></script>
+<script src="/static/workflow.js?v=21d2ef8eb016" defer></script>
 <script src="/static/video-jobs.js" defer></script>
 </body>
 </html>

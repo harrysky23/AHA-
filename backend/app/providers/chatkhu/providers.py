@@ -1,4 +1,4 @@
-"""Independent media providers; no hook into ordinary AHA generation requests yet."""
+"""ChatKHU media providers with explicit approval for each generation."""
 import base64
 import binascii
 from copy import deepcopy
@@ -21,8 +21,9 @@ def validate_request(kind, payload, settings):
     text = payload.get("input" if kind == "tts" else "prompt")
     if not isinstance(text, str) or not 1 <= len(text) <= (4000 if kind == "tts" else 2000):
         raise ChatKHUError("invalid_request", "입력 텍스트 길이를 확인해 주세요.")
-    if kind == "image" and (type(payload.get("number_of_images")) is not int or payload["number_of_images"] != 1 or payload.get("aspect_ratio") != "9:16"):
-        raise ChatKHUError("invalid_request", "이번 검증은 이미지 1장·9:16만 허용해요.")
+    if kind == "image" and (type(payload.get("number_of_images")) is not int or payload["number_of_images"] != 1
+                            or payload.get("aspect_ratio") not in ("9:16", "16:9")):
+        raise ChatKHUError("invalid_request", "이미지 1장과 9:16 또는 16:9 비율을 지정해 주세요.")
     if kind == "tts" and payload.get("voice") != "Aoede":
         raise ChatKHUError("invalid_request", "이번 검증은 Aoede 단일 화자만 사용해요.")
     if kind == "tts" and not re.search(r"[가-힣]", text):

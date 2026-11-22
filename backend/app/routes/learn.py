@@ -1,13 +1,39 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import Field
+from typing import Annotated
 
 from ..config import ConfigurationError, Settings, get_settings
+from ..schemas import StrictModel
 from ..services.errors import LearningError
 from ..services.interactive import create_interactive
+from ..services.interactive_backgrounds import generate_background, quote_background
 from ..services.lessons import build_sample_video, create_learning
 from ..services.uploads import FILE_TYPES, MAX_FILE_BYTES, has_signature, read_upload
 import math
 
 router = APIRouter(prefix="/api")
+
+
+class BackgroundQuote(StrictModel):
+    token: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{32}$")]
+
+
+class BackgroundApproval(BackgroundQuote):
+    quote_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{24}$")]
+    accept_cost: bool
+    accept_uncapped: bool
+
+
+@router.post("/learn/background/quote")
+async def background_quote(body: BackgroundQuote):
+    return JSONResponse(await quote_background(body.token), headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/learn/background/generate")
+async def background_generate(body: BackgroundApproval):
+    result = await generate_background(body.token, body.quote_id, body.accept_cost, body.accept_uncapped)
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/health")

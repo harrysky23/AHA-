@@ -80,6 +80,7 @@ def test_questions_select_different_interactions_and_cache_validated_spec(fixtur
     assert len(fixture_provider) == 2
     first, again, physics = first.json(), again.json(), physics.json()
     assert first["lesson"]["viewer_url"] == "/lessons/interactive"
+    assert first["lesson"]["background"] is None
     assert first["lesson"]["spec"]["visualization"]["type"] == "process_diagram"
     assert first["lesson"]["spec"]["source_quotes"] == [{"page": 1, "quote": QUOTE}]
     assert first["material"]["sent_to_provider"]
@@ -95,6 +96,8 @@ def test_questions_select_different_interactions_and_cache_validated_spec(fixtur
     assert {v["properties"]["type"]["enum"][0] for v in variants} == {
         "function_graph", "process_diagram", "timeline", "comparison", "state_transition", "text_explanation",
     }
+    assert set(sent_schema["properties"]["motion_scene"]["properties"]) == {"actor", "landmarks", "states"}
+    assert sent_schema["properties"]["background_prompt"]["type"] == ["string", "null"]
 
 
 def test_new_route_checks_consent_before_generation(fixture_provider):
@@ -205,6 +208,55 @@ def test_out_of_bounds_or_invalid_graph_keeps_explanation_and_quiz(changes):
     assert lesson.quiz.model_dump() == original["quiz"]
 
 
+def test_process_with_invalid_layout_keeps_safe_node_labels_and_details():
+    nodes = [{**node, "x": 120} for node in PROCESS["nodes"]]
+    process = {**PROCESS, "nodes": nodes}
+    lesson = interactive.parse_interactive(json.dumps(spec("광합성에서 에너지 이동", process)), [])
+    assert lesson.visualization.type == "step_explorer"
+    assert [step.model_dump() for step in lesson.visualization.steps] == [
+        {"label": node["label"], "detail": node["detail"]} for node in nodes
+    ]
+    assert lesson.quiz is not None
+
+
+@pytest.mark.parametrize("visual", [
+    {**GRAPH, "x_range": {"min": 0, "max": 5000}},
+    {"type": "text_explanation", "heading": "시간과 거리", "paragraphs": ["거리는 시간에 비례해요."],
+     "fallback_reason": "핵심 내용을 단계로 살펴봐요."},
+])
+def test_topic_specific_exploration_steps_are_used_when_graph_is_unavailable(visual):
+    generated = spec("등속 운동의 관찰", visual)
+    generated["exploration_steps"] = [
+        {"label": "1초 후", "detail": "이동 거리는 2m예요."},
+        {"label": "2초 후", "detail": "시간이 두 배가 되면서 이동 거리는 4m가 돼요."},
+    ]
+    lesson = interactive.parse_interactive(json.dumps(generated), [])
+    assert lesson.visualization.type == "step_explorer"
+    assert [step.model_dump() for step in lesson.visualization.steps] == generated["exploration_steps"]
+
+
+def test_validated_motion_scene_accepts_topic_specific_objects_and_visible_changes():
+    response = spec("코일 주변 자석 움직이기", PROCESS)
+    response["motion_scene"] = {
+        "actor": "막대자석",
+        "landmarks": [{"label": "코일", "x": .66, "y": .5, "size": 77, "shape": "coil", "color": "violet"}],
+        "states": [
+            {"label": "떨어져 있을 때", "detail": "코일에서 멀리 있어요.", "x": .2, "y": .5,
+             "size": 52, "shape": "magnet", "color": "blue"},
+            {"label": "가까워질 때", "detail": "코일을 지나는 자기선속이 변해요.", "x": .56, "y": .5,
+             "size": 52, "shape": "magnet", "color": "pink"},
+        ],
+    }
+    lesson = interactive.parse_interactive(json.dumps(response), [])
+    assert lesson.motion_scene.model_dump() == response["motion_scene"]
+    response["motion_scene"]["states"][1]["shape"] = "url(https://example.test)"
+    assert interactive.parse_interactive(json.dumps(response), []).motion_scene is None
+    response["motion_scene"]["states"][1] = {
+        **response["motion_scene"]["states"][0], "label": "이름만 바뀜",
+    }
+    assert interactive.parse_interactive(json.dumps(response), []).motion_scene is None
+
+
 def test_unmatched_quote_is_removed_and_valid_quote_is_preserved():
     quotes = [{"page": 1, "quote": "Not in the PDF"}, {"page": 1, "quote": QUOTE}]
     result = interactive.parse_interactive(json.dumps(spec("광합성", PROCESS, quotes)), [{"page": 1, "text": QUOTE}])
@@ -254,3 +306,5 @@ def test_interactive_viewer_uses_local_hashed_script_in_opaque_sandbox():
     assert "sandbox allow-scripts" in csp
     assert "allow-same-origin" not in csp
     assert "__INTERACTIVE_SCRIPT__" not in response.text
+    assert "__MOTION_SCENE_SCRIPT__" not in response.text
+    assert "mountMotionScene" in response.text

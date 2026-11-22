@@ -126,6 +126,74 @@
     const detail = document.createElement('dd'); detail.textContent = value;
     $('request-summary').append(term, detail);
   }
+  function offerBackground(plan, iframe) {
+    if (!plan || typeof plan.token !== 'string' || typeof plan.prompt !== 'string') return;
+    const area = $('background-tools');
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'btn btn-ghost btn-sm';
+    const status = document.createElement('p');
+    status.className = 'field-note';
+    status.setAttribute('role', 'status');
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = 'ChatKHU에 전송할 배경 설명';
+    const prompt = document.createElement('p');
+    prompt.textContent = plan.prompt;
+    details.append(summary, prompt);
+    action.textContent = 'AI 배경 만들기 · 무료 견적';
+    status.textContent = '이 실습에는 장면의 공간을 보여 주는 배경을 추가할 수 있어요.';
+    area.append(action, status, details);
+    area.hidden = false;
+    let quote;
+
+    async function post(path, fields) {
+      const response = await fetch(`/api/learn/background/${path}`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:plan.token, ...fields}),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const error = new Error(typeof data.detail === 'string' ? data.detail : '배경 요청을 처리하지 못했어요.');
+        error.code = data.code;
+        throw error;
+      }
+      return data;
+    }
+    action.addEventListener('click', async () => {
+      action.disabled = true;
+      try {
+        if (!quote) {
+          status.textContent = 'ChatKHU에서 무료 견적을 확인하고 있어요.';
+          quote = await post('quote');
+          const credits = Number(quote.credits).toLocaleString('ko-KR');
+          const wording = {exact:`${credits} 크레딧`, maximum:`최대 ${credits} 크레딧`,
+            minimum:`최소 ${credits} 크레딧 · 상한 미확정`, approximate:`약 ${credits} 크레딧 · 상한 미확정`};
+          status.textContent = `${quote.model} · 16:9 이미지 1장 · ${wording[quote.bound]}`;
+          action.textContent = ['exact','maximum'].includes(quote.bound)
+            ? '크레딧 사용에 동의하고 1장 생성' : '상한 미확정 비용에 동의하고 1장 생성';
+          details.open = true;
+          return;
+        }
+        status.textContent = '배경 한 장을 만드는 중이에요. 지금도 실습을 조작할 수 있어요.';
+        const result = await post('generate', {
+          quote_id:quote.quote_id, accept_cost:true, accept_uncapped:!['exact','maximum'].includes(quote.bound),
+        });
+        if (iframe.isConnected) iframe.contentWindow.postMessage({type:'aha:motion-background', image:result.image}, '*');
+        status.textContent = result.cached ? '기존 배경을 불러왔어요.' : '배경을 적용했어요.';
+        if (result.credits_charged != null) status.textContent += ` 이미지 생성 차감 ${result.credits_charged} 크레딧.`;
+        action.hidden = true;
+        details.open = false;
+      } catch (error) {
+        status.textContent = `${error.message} 기본 장면에서 실습을 계속할 수 있어요.`;
+        action.hidden = Boolean(quote) && !['background_quote_required','background_busy'].includes(error.code);
+        quote = null;
+        action.textContent = '무료 견적 다시 확인';
+      } finally {
+        action.disabled = false;
+      }
+    });
+  }
   function render(data) {
     // Only locally owned, allowlisted viewers are accepted. Never inject response HTML.
     if (!['local_demo','mock','gemini'].includes(data.mode) || !['html', 'shorts'].includes(data.format)) throw new Error('지원하지 않는 학습 응답이에요.');
@@ -134,6 +202,8 @@
     $('result-video').pause();
     $('result-video').removeAttribute('src'); $('result-video').load();
     $('lesson-view').replaceChildren();
+    $('background-tools').replaceChildren();
+    $('background-tools').hidden = true;
     $('request-summary').replaceChildren();
     $('result-title').textContent = data.title;
     $('result-mode').textContent = data.fallback ? '기본 예제 · API 연결 없이 열기' : data.mode === 'gemini' ? (data.generation?.cached ? 'Gemini AI · 캐시 재사용' : 'Gemini AI · 구조화 명세 검증 통과') : data.mode === 'mock' ? 'mock · 고정 예제, AI 아님' : '기존 예시 영상 · 새 생성 아님';
@@ -164,6 +234,7 @@
       }
       iframe.src = data.lesson.viewer_url;
       $('lesson-view').append(iframe);
+      offerBackground(data.lesson.background, iframe);
     } else {
       $('video-note').textContent = data.video.notice;
       $('result-video').src = data.video.url;
@@ -236,6 +307,7 @@
     const controls = [...form.querySelectorAll('input,textarea,button,select')].filter(el => el !== submit);
     controls.forEach(el => { el.disabled = true; });
     $('learning-result').hidden = true; $('result-video').pause(); $('lesson-view').replaceChildren();
+    $('background-tools').replaceChildren(); $('background-tools').hidden = true;
     submit.textContent = '학습 결과 불러오는 중…'; $('request-status').textContent = '로컬 서버에서 입력을 확인하고 있어요.';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMilliseconds);

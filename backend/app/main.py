@@ -115,16 +115,18 @@ async def lesson():
 async def interactive_lesson():
     directory = FRONTEND / "lessons"
     html = (directory / "interactive.html").read_text(encoding="utf-8")
-    response = lesson_response(html.replace("__INTERACTIVE_SCRIPT__", (directory / "interactive.js").read_text(encoding="utf-8")))
+    html = html.replace("__MOTION_SCENE_SCRIPT__", (directory / "motion-scene.js").read_text(encoding="utf-8"))
+    response = lesson_response(html.replace("__INTERACTIVE_SCRIPT__", (directory / "interactive.js").read_text(encoding="utf-8")), inline_images=True)
     response.headers["Cache-Control"] = "no-cache"
     return response
 
 
-def lesson_response(html: str) -> HTMLResponse:
+def lesson_response(html: str, *, inline_images: bool = False) -> HTMLResponse:
     scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
     hashes = " ".join("'sha256-" + base64.b64encode(hashlib.sha256(s.encode()).digest()).decode() + "'" for s in scripts)
+    images = "img-src data:; " if inline_images else ""
     return HTMLResponse(html, headers={
-        "Content-Security-Policy": f"default-src 'none'; script-src {hashes}; style-src 'unsafe-inline'; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; sandbox allow-scripts",
+        "Content-Security-Policy": f"default-src 'none'; script-src {hashes}; style-src 'unsafe-inline'; {images}connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; sandbox allow-scripts",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",
         "Permissions-Policy": "camera=(), microphone=(), geolocation=()",

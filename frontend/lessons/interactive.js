@@ -16,19 +16,36 @@
     node.addEventListener('click', action);
     return node;
   }
-  function explorer(labels, describe, groupLabel) {
+  function explorer(labels, describe, groupLabel, navigation = false, onSelect) {
     const list = element('div', undefined, 'choices');
     list.setAttribute('role', 'group');
     list.setAttribute('aria-label', groupLabel);
     const detail = element('div', undefined, 'detail');
     detail.setAttribute('aria-live', 'polite');
     const buttons = labels.map((label, index) => button(label, () => select(index)));
+    let selected = 0;
+    const previous = button('← 이전 단계', () => select(selected - 1));
+    const next = button('다음 단계 →', () => select(selected + 1));
+    const progress = element('output', undefined, 'step-progress');
     function select(index) {
+      selected = index;
       buttons.forEach((control, i) => control.setAttribute('aria-pressed', String(i === index)));
       detail.replaceChildren(...describe(index));
+      onSelect?.(index);
+      if (navigation) {
+        previous.disabled = index === 0;
+        next.disabled = index === buttons.length - 1;
+        progress.textContent = `${index + 1} / ${buttons.length} 단계`;
+      }
     }
     list.append(...buttons);
-    visual.append(list, detail);
+    visual.append(list);
+    if (navigation && buttons.length > 1) {
+      const controls = element('div', undefined, 'movement');
+      controls.append(previous, progress, next);
+      visual.append(controls);
+    }
+    visual.append(detail);
     select(0);
   }
   function connections(edges, selected, nodes) {
@@ -40,11 +57,18 @@
     }
     return outgoing.length ? [list] : [];
   }
-  function process(v) {
+  function process(v, showMap) {
+    const selectFlow = showMap ? flowMap(v) : undefined;
     explorer(v.nodes.map(node => node.label), index => {
       const node = v.nodes[index];
       return [element('h3', node.label), element('p', node.detail), ...connections(v.edges, node.id, v.nodes)];
-    }, '과정 단계');
+    }, '과정 단계', true, selectFlow);
+  }
+  function stepExplorer(v) {
+    explorer(v.steps.map(step => step.label), index => {
+      const step = v.steps[index];
+      return [element('h3', step.label), element('p', step.detail)];
+    }, '학습 단계', true);
   }
   function timeline(v) {
     explorer(v.events.map(event => event.time_label), index => {
@@ -89,6 +113,71 @@
     for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
     parent.append(node);
     return node;
+  }
+  function flowMap(v) {
+    const scene = svg('svg', {viewBox:'0 0 620 240', class:'process-map', role:'img', 'aria-label':'선택한 단계 사이의 흐름'}, visual);
+    const defs = svg('defs', {}, scene);
+    const arrow = svg('marker', {id:'flow-arrow', viewBox:'0 0 10 10', refX:8, refY:5, markerWidth:5, markerHeight:5, orient:'auto'}, defs);
+    svg('path', {d:'M0 0 10 5 0 10z', fill:'#8473c3'}, arrow);
+    const points = new Map(v.nodes.map((node, i) => {
+      const theta = i * 2 * Math.PI / v.nodes.length - Math.PI / 2;
+      const x = 310 + 240 * Math.cos(theta), y = 120 + 83 * Math.sin(theta);
+      return [node.id, {x, y}];
+    }));
+    const paths = new Map(v.edges.map(edge => {
+      const a = points.get(edge.source), b = points.get(edge.target);
+      const dx = b.x-a.x, dy = b.y-a.y, distance = Math.hypot(dx,dy);
+      const ux = dx/distance, uy = dy/distance;
+      const d = `M${a.x+20*ux} ${a.y+20*uy} Q${(a.x+b.x)/2-12*uy} ${(a.y+b.y)/2+12*ux} ${b.x-23*ux} ${b.y-23*uy}`;
+      const path = svg('path', {d, 'marker-end':'url(#flow-arrow)', class:'process-route'}, scene);
+      return [edge.id, path];
+    }));
+    const nodes = v.nodes.map((node, index) => {
+      const {x,y} = points.get(node.id);
+      const group = svg('g', {class:'process-node'}, scene);
+      svg('title', {}, group).textContent = node.label;
+      svg('circle', {cx:x, cy:y, r:18}, group);
+      svg('text', {x,y:y+5,'text-anchor':'middle'}, group).textContent = String(index + 1);
+      return group;
+    });
+    const token = svg('circle', {r:7,class:'process-token'}, scene);
+    const controls = element('div', undefined, 'scene-controls');
+    const edgeLabel = element('label','흐름 선택');
+    edgeLabel.htmlFor = 'flow-edge';
+    const edges = element('select');
+    edges.id = 'flow-edge';
+    const progressLabel = element('label','흐름 움직이기');
+    progressLabel.htmlFor = 'flow-progress';
+    const progress = element('input');
+    progress.type = 'range';
+    progress.id = 'flow-progress';
+    progress.value = '0';
+    controls.append(edgeLabel, edges, progressLabel, progress);
+    visual.append(controls);
+    function move() {
+      const selected = paths.get(edges.value);
+      for (const path of paths.values()) path.classList.toggle('active', path === selected);
+      token.style.display = selected ? '' : 'none';
+      if (!selected) return;
+      const point = selected.getPointAtLength(selected.getTotalLength() * Number(progress.value) / 100);
+      token.setAttribute('cx', point.x);
+      token.setAttribute('cy', point.y);
+    }
+    progress.addEventListener('input', move);
+    edges.addEventListener('change', () => { progress.value = '0'; move(); });
+    return (index) => {
+      nodes.forEach((node, i) => node.classList.toggle('active', i === index));
+      const outgoing = v.edges.filter(edge => edge.source === v.nodes[index].id);
+      edges.replaceChildren(...outgoing.map(edge => {
+        const destination = v.nodes.find(node => node.id === edge.target);
+        const option = element('option', `${edge.label} → ${destination.label}`);
+        option.value = edge.id;
+        return option;
+      }));
+      controls.hidden = !outgoing.length;
+      progress.value = '0';
+      move();
+    };
   }
   const evaluate = (curve, x) => curve.coefficients.reduceRight((value, coefficient) => value * x + coefficient, 0);
   const display = (number) => Number(number.toPrecision(5)).toString();
@@ -182,7 +271,7 @@
   }
   const renderers = {
     function_graph:graph, process_diagram:process, timeline, comparison,
-    state_transition:stateTransition, text_explanation:explanation,
+    state_transition:stateTransition, text_explanation:explanation, step_explorer:stepExplorer,
   };
   function showQuiz(quiz) {
     $('quiz-question').textContent = quiz.question;
@@ -205,7 +294,18 @@
     $('objective').textContent = `학습 목표 · ${spec.objective}`;
     $('explanation').textContent = spec.explanation;
     $('activity').textContent = spec.activity;
-    renderer(spec.visualization);
+    if (spec.visualization.type === 'text_explanation' && spec.visualization.paragraphs.length === 1) {
+      $('practice-title').textContent = '개념 설명';
+    }
+    renderer(spec.visualization, !spec.motion_scene);
+    if (spec.motion_scene) {
+      $('practice-title').textContent = '직접 움직여 보기';
+      $('activity').textContent = '그림 속 대상을 직접 끌거나 슬라이더를 움직여 보세요.';
+      const details = element('details', undefined, 'material-steps');
+      details.append(element('summary', '학습 자료에 나온 과정'), element('p', spec.activity), ...visual.children);
+      window.mountMotionScene(visual, spec.motion_scene, {svg, element, colors});
+      visual.append(details);
+    }
     if (spec.quiz) showQuiz(spec.quiz);
     const sources = [...spec.source_quotes.map(source => `PDF ${source.page}쪽 · ${source.quote}`), ...spec.limitations];
     $('source-list').append(...sources.map(source => element('li', source)));
