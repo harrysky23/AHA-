@@ -145,9 +145,15 @@ class GatewayClient:
 
     def complete_video_code(self, model, messages, *, repair=False):
         kind = "code_repair" if repair else "code"
+        return self._complete_claude(model, messages, kind, "code", "코드", 5500)
+
+    def complete_interactive_lesson(self, model, messages):
+        return self._complete_claude(model, messages, "interactive_lesson", "interactive", "실습 명세", 5500)
+
+    def _complete_claude(self, model, messages, kind, error_prefix, task, max_tokens):
         with self.generation_lock:
             if self.sent.get(kind):
-                raise ChatKHUError("call_limit", "코드 생성과 수정은 각각 작업당 1회만 시도해요.")
+                raise ChatKHUError("call_limit", f"Claude {task} 요청은 작업당 최대 1회만 시도해요.")
             self.sent[kind] = 1
         started = self.clock()
         self.event({"phase": "submission", "kind": kind, "model": model})
@@ -155,7 +161,7 @@ class GatewayClient:
             system = "\n".join(m["content"] for m in messages if m["role"] == "system")
             conversation = [m for m in messages if m["role"] != "system"]
             data, headers = self._json("POST", "/claude/v1/messages/", payload={
-                "model": model, "system": system, "messages": conversation, "max_tokens": 5500,
+                "model": model, "system": system, "messages": conversation, "max_tokens": max_tokens,
                 "output_config": {"effort": "low"}, "stream": False,
             }, limit=512*1024, headers={"anthropic-version": "2023-06-01"})
             measured = accounting(data, headers)
@@ -173,14 +179,14 @@ class GatewayClient:
                         "stop_reason": stop_reason if stop_reason in known_stops else None,
                         "elapsed_seconds": round(self.clock()-started, 3), **measured})
             if stop_reason == "max_tokens":
-                raise ChatKHUError("code_output_limit", "Claude가 출력 토큰 한도에 도달해 코드 응답을 완료하지 못했어요.")
+                raise ChatKHUError(f"{error_prefix}_output_limit", f"Claude가 출력 토큰 한도에 도달해 {task} 응답을 완료하지 못했어요.")
             blocks = data.get("content")
             content = "".join(
                 block["text"] for block in blocks
                 if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
             ) if isinstance(blocks, list) else ""
             if stop_reason != "end_turn" or not content.strip():
-                raise ChatKHUError("invalid_code_response", "Claude 응답에 완성된 코드 텍스트가 없어요.")
+                raise ChatKHUError(f"invalid_{error_prefix}_response", f"Claude 응답에 완성된 {task}가 없어요.")
             return content
         except ChatKHUError as exc:
             self.event({"phase": "error", "kind": kind, "model": model, "code": exc.code,

@@ -23,6 +23,7 @@ class Settings:
     cache_ttl_seconds: int = 300
     cache_max_entries: int = 64
     storyboard_max_output_tokens: int = 8192
+    interactive_provider: str = "gemini"
 
     def validate_gemini(self):
         if not self.api_key:
@@ -40,6 +41,9 @@ def get_settings() -> Settings:
     mode = provider or legacy or "mock"
     if mode not in {"mock", "gemini", "elice"}:
         raise ConfigurationError("AHA_AI_PROVIDER는 mock, gemini 또는 elice로 설정해 주세요.")
+    interactive_provider = values.get("AHA_INTERACTIVE_PROVIDER", "gemini").strip()
+    if interactive_provider not in {"gemini", "claude"}:
+        raise ConfigurationError("AHA_INTERACTIVE_PROVIDER는 claude 또는 gemini로 설정해 주세요.")
     try:
         tokens = int(values.get("GEMINI_MAX_OUTPUT_TOKENS", "4096"))
         timeout = float(values.get("AI_TIMEOUT_SECONDS", "45"))
@@ -53,4 +57,5 @@ def get_settings() -> Settings:
     return Settings(mode=mode, api_key=values.get("GEMINI_API_KEY", "") or "",
                     model=values.get("GEMINI_MODEL", "gemini-3.5-flash-lite") or "gemini-3.5-flash-lite",
                     max_output_tokens=tokens, timeout_seconds=timeout,
-                    cache_ttl_seconds=ttl, cache_max_entries=entries, storyboard_max_output_tokens=story_tokens)
+                    cache_ttl_seconds=ttl, cache_max_entries=entries, storyboard_max_output_tokens=story_tokens,
+                    interactive_provider=interactive_provider)

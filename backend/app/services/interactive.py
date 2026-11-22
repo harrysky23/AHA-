@@ -5,18 +5,20 @@ from hashlib import sha256
 import json
 import logging
 import random
+import re
 from typing import Annotated, Literal
 from uuid import uuid4
 
 from pydantic import Field, ValidationError, model_validator
 
 from ..config import Settings
+from ..providers.claude_interactive import ClaudeInteractiveProvider
 from ..providers.gemini import GeminiProvider, response_schema
 from ..schemas import StrictModel
 from ..storyboard_schema import Label, Palette, Text, Visualization
 from .cache import LessonCache
 from .errors import LearningError
-from .interactive_backgrounds import offer_background
+from .interactive_backgrounds import describe_scene, offer_background
 from .materials import MaterialContext, analyze_material
 from .validation import load_json
 
@@ -90,10 +92,19 @@ class MotionScene(StrictModel):
 
     @model_validator(mode="after")
     def distinct_poses(self):
-        poses = [(state.x, state.y, state.size, state.shape, state.color) for state in self.states]
+        poses = [(state.x, state.y, state.size, state.shape, state.color, getattr(state, "effects", ()))
+                 for state in self.states]
         if any(a == b for a, b in zip(poses, poses[1:])):
             raise ValueError("Consecutive states must change a visible property")
         return self
+
+
+class EnhancedMotionState(MotionState):
+    effects: Annotated[list[ScenePose], Field(max_length=3)] = Field(default_factory=list)
+
+
+class EnhancedMotionScene(MotionScene):
+    states: Annotated[list[EnhancedMotionState], Field(min_length=2, max_length=6)]
 
 
 class InteractiveSpec(StrictModel):
@@ -114,7 +125,7 @@ class InteractiveSpec(StrictModel):
 class RenderableInteractiveSpec(InteractiveSpec):
     # The renderer also accepts a stepper built from independently validated content.
     visualization: Annotated[Visualization | StepExplorer, Field(discriminator="type")]
-    motion_scene: MotionScene | None = None
+    motion_scene: EnhancedMotionScene | None = None
     background_prompt: Text | None = None
     exploration_steps: ExplorationSteps = Field(default_factory=list)
     quiz: Quiz | None
@@ -123,6 +134,10 @@ class RenderableInteractiveSpec(InteractiveSpec):
 # Bounds in nested arrays and numeric fields can exceed Gemini's grammar budget.
 # InteractiveSpec continues to enforce those bounds before caching or displaying output.
 SCHEMA = response_schema(InteractiveSpec.model_json_schema(), include_bounds=False)
+CLAUDE_VERSION = "interactive-claude-1"
+CLAUDE_INSTRUCTIONS = """설명만 바꾸는 화면이 되지 않도록, 학생이 조작할 변수를 한 가지 정하고 결과가 화면에서 눈에 띄게 바뀌는 활동을 설계하세요. 이동이 중요한 경우 랜드마크를 넓게 배치해 동작의 원인과 결과를 구분하세요. states의 effects는 그 시점에 나타나는 보조 도형입니다. 모양·색·크기·위치를 조합해 관찰해야 할 변화를 강조하고 뜻 없는 장식은 피하세요. 수학은 정확한 좌표와 수를 사용하고, 개념 모형인 경우 가정을 표시하세요. 화면 전체에 조작할 대상, 볼 수 있는 결과, 해석할 질문이 함께 있어야 합니다. 반환은 단일 JSON 객체이며 코드는 포함하지 마세요.
+JSON 스키마:
+""" + json.dumps(RenderableInteractiveSpec.model_json_schema(), ensure_ascii=False, separators=(",", ":"))
 interactive_cache: LessonCache[tuple[RenderableInteractiveSpec, dict]] = LessonCache()
 MAX_INLINE_RETRY_DELAY_SECONDS = 5
 VISUAL_FALLBACK = "시각화의 수치나 단계 연결을 확인하지 못해 같은 자료로 만든 설명을 보여드려요."
@@ -155,7 +170,9 @@ def exploration_for(data: dict) -> StepExplorer | None:
 
 def parse_interactive(raw: str, pages: list[dict], *, request_id: str = "-") -> RenderableInteractiveSpec:
     try:
-        data = load_json(raw)
+        raw = raw.strip()
+        fenced = re.fullmatch(r"```(?:json)?\s*([\s\S]+?)\s*```", raw, re.IGNORECASE)
+        data = load_json(fenced[1] if fenced else raw)
         try:
             spec = RenderableInteractiveSpec.model_validate(data)
         except ValidationError as exc:
@@ -203,8 +220,27 @@ def parse_interactive(raw: str, pages: list[dict], *, request_id: str = "-") -> 
         logger.warning("request_id=%s experience=interactive validation=json", request_id)
     raise LearningError(
         "invalid_interactive_spec",
-        "Gemini가 만든 실습 명세를 검증하지 못했어요. 같은 자료로 다시 생성하거나 기본 예제를 열어 주세요.",
+        "모델이 만든 실습 명세를 검증하지 못했어요. 같은 자료로 다시 생성하거나 기본 예제를 열어 주세요.",
     )
+
+
+async def generate_gemini_lesson(provider, messages, settings, request_id, image):
+    try:
+        async with asyncio.timeout(settings.timeout_seconds):
+            try:
+                envelope = await provider.generate_json(messages, SCHEMA, settings.max_output_tokens, request_id, image=image)
+            except LearningError as exc:
+                if exc.code != "gemini_overloaded":
+                    raise
+                delay = max(random.uniform(1, 2), exc.retry_after or 0)
+                if delay > MAX_INLINE_RETRY_DELAY_SECONDS:
+                    raise
+                logger.info("request_id=%s experience=interactive event=retry reason=gemini_overloaded", request_id)
+                await asyncio.sleep(delay)
+                envelope = await provider.generate_json(messages, SCHEMA, settings.max_output_tokens, request_id, image=image)
+    except TimeoutError:
+        raise LearningError("gemini_timeout", "Gemini 응답 시간이 초과됐어요. 다시 시도하거나 기본 예제를 열어 주세요.", 504) from None
+    return provider.response_text(envelope)
 
 
 async def create_interactive(settings: Settings, concept: str, question: str,
@@ -212,43 +248,43 @@ async def create_interactive(settings: Settings, concept: str, question: str,
     if settings.mode != "gemini":
         raise LearningError("interactive_provider_unavailable", "새 주제 실습을 만들려면 서버에서 Gemini 모드를 설정해 주세요.", 503)
 
+    provider_name = settings.interactive_provider
+    claude = provider_name == "claude"
+    provider_label = "Claude" if claude else "Gemini"
     request_id = uuid4().hex
     try:
         mime = material["content_type"] if material else None
         image = (mime, file_data) if mime and mime.startswith("image/") and file_data else None
-        context = (MaterialContext(status="image_provided", message="첨부 이미지와 질문으로 학습 실습을 구성하도록 Gemini에 요청했어요.")
+        context = (MaterialContext(status="image_provided", message=f"첨부 이미지와 질문으로 학습 실습을 구성하도록 {provider_label}에 요청했어요.")
                    if image else await analyze_material(file_data, mime))
         user_data = json.dumps({"concept": concept, "question": question, "pdf_pages": context.pages}, ensure_ascii=False)
         instruction = SYSTEM_PROMPT + "\n" + IMAGE_INSTRUCTIONS if image else SYSTEM_PROMPT
-        messages = [{"content": instruction}, {"content": user_data}]
-        provider = GeminiProvider(settings)
+        if claude:
+            provider = ClaudeInteractiveProvider(settings.timeout_seconds)
+            instruction += "\n" + CLAUDE_INSTRUCTIONS
+            credential = {"key": provider.settings.api_key, "gateway": provider.settings.base_url}
+            request_options = {}
+
+            async def request_generation():
+                return await provider.generate(instruction, user_data, image, request_id)
+        else:
+            provider = GeminiProvider(settings)
+            credential = {"key": settings.api_key}
+            messages = [{"content": instruction}, {"content": user_data}]
+            request_options = {"schema": SCHEMA, "max_output_tokens": settings.max_output_tokens}
+
+            async def request_generation():
+                return await generate_gemini_lesson(provider, messages, settings, request_id, image)
+
+        version = CLAUDE_VERSION if claude else PROMPT_VERSION
         key = interactive_cache.fingerprint({
-            "model": provider.model, "credential": settings.api_key, "version": PROMPT_VERSION,
-            "messages": messages, "schema": SCHEMA, "max_output_tokens": settings.max_output_tokens,
+            "provider": provider_name, "model": provider.model, "credential": credential, "version": version,
+            "instruction": instruction, "reference": user_data, **request_options,
             "image": {"mime": image[0], "sha256": sha256(image[1]).hexdigest()} if image else None,
         })
 
         async def generate():
-            # One retry on explicit model overload, sharing the original request deadline.
-            async def request_generation():
-                return await provider.generate_json(messages, SCHEMA, settings.max_output_tokens, request_id, image=image)
-
-            try:
-                async with asyncio.timeout(settings.timeout_seconds):
-                    try:
-                        envelope = await request_generation()
-                    except LearningError as exc:
-                        if exc.code != "gemini_overloaded":
-                            raise
-                        delay = max(random.uniform(1, 2), exc.retry_after or 0)
-                        if delay > MAX_INLINE_RETRY_DELAY_SECONDS:
-                            raise
-                        logger.info("request_id=%s experience=interactive event=retry reason=gemini_overloaded", request_id)
-                        await asyncio.sleep(delay)
-                        envelope = await request_generation()
-            except TimeoutError:
-                raise LearningError("gemini_timeout", "Gemini 응답 시간이 초과됐어요. 다시 시도하거나 기본 예제를 열어 주세요.", 504) from None
-            raw, usage = provider.response_text(envelope)
+            raw, usage = await request_generation()
             return parse_interactive(raw, context.pages, request_id=request_id), usage
 
         (spec, usage), cache_status = await interactive_cache.get_or_create(
@@ -268,7 +304,7 @@ async def create_interactive(settings: Settings, concept: str, question: str,
     if image and cached:
         grounding["message"] = "같은 이미지와 질문으로 만든 실습을 불러왔어요."
     used_material = bool(context.pages or image)
-    notice = "같은 입력의 Gemini 학습 명세를 불러왔어요." if cached else "Gemini가 입력한 주제로 인터랙티브 실습을 구성했어요."
+    notice = f"같은 입력의 {provider_label} 학습 명세를 불러왔어요." if cached else f"{provider_label}가 입력한 주제로 인터랙티브 실습을 구성했어요."
     if spec.motion_scene is None and getattr(spec.visualization, "fallback_reason", None) == VISUAL_FALLBACK:
         notice = VISUAL_FALLBACK
     if spec.motion_scene is None and spec.visualization.type == "step_explorer":
@@ -276,15 +312,19 @@ async def create_interactive(settings: Settings, concept: str, question: str,
     if spec.quiz is None:
         notice += " " + QUIZ_FALLBACK
     lesson_data = spec.model_dump(exclude={"exploration_steps", "background_prompt"})
-    background = offer_background(spec.background_prompt) if spec.motion_scene and spec.background_prompt else None
+    background = None
+    if spec.motion_scene:
+        recommended = bool(spec.background_prompt)
+        description = spec.background_prompt or describe_scene(spec.title, spec.motion_scene.landmarks)
+        background = offer_background(description, recommended=recommended)
     return {
-        "mode": "gemini", "format": "html", "title": spec.title,
+        "mode": provider_name, "format": "html", "title": spec.title,
         "request": {"concept": concept, "question": question},
         "material": {**material, "text_extracted": bool(context.pages), "analyzed": used_material,
                      "sent_to_provider": used_material and not cached} if material else None,
         "grounding": grounding,
-        "generation": {"provider": "gemini", "model": provider.model, "request_id": request_id,
-                       "status": "validated", "external_ai": True, "prompt_version": PROMPT_VERSION,
+        "generation": {"provider": provider_name, "model": provider.model, "request_id": request_id,
+                       "status": "validated", "external_ai": True, "prompt_version": version,
                        "cached": cached, "cache_status": cache_status, "usage": {} if cached else usage},
         "notice": notice,
         "verification": {"notice": "명세 구조·그래프 좌표·PDF 인용을 검사했어요. 설명과 확인 문제의 내용은 학습 자료와 함께 검토해 주세요."},

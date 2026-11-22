@@ -43,8 +43,8 @@
           <button id="shorts-sample" class="text-button" type="button">기존 예시 영상만 먼저 보기</button>
         </div>
         <div class="scope-note"><strong id="scope-title">이번에는 이 개념을 배워요</strong><p id="scope-description">수학 II · f(x) = x²에서 점 P(1, 1)의 미분계수<br>할선의 기울기 2+h → 접선의 기울기 2</p><p id="mode-note">mock은 고정 예제, Gemini는 실제 모델로 설명을 구성해요. Elice는 향후 연결 예정이에요.</p></div>
-        <label id="consent-option" class="consent-option" hidden><input id="external-consent" type="checkbox"><span id="gemini-consent-copy">성인 개발·평가용 Gemini 전송 안내를 확인했어요. 질문·개념·PDF 추출 텍스트가 Google에 전송될 수 있으며, 무료 티어 입력·출력은 제품 개선과 검토에 사용될 수 있어요. 개인정보·민감정보 없는 자료만 사용해요.</span><span id="chatkhu-consent-copy" hidden>개념·질문·PDF 추출 텍스트 또는 첨부 이미지·텍스트가 ChatKHU에 전송돼요. Claude 코드 생성과 내레이션 합성, 오류 시 코드 수정 최대 1회에 크레딧이 사용돼요. 개인정보·민감정보 없는 자료를 사용해 주세요.</span></label>
-        <label id="image-consent-option" class="consent-option" hidden><input id="image-consent" type="checkbox"><span>첨부 이미지 원본을 Google Gemini에 전송하는 데 동의해요. 이름, 학교, 연락처 등 개인정보가 보이면 가린 뒤 올려 주세요.</span></label>
+        <label id="consent-option" class="consent-option" hidden><input id="external-consent" type="checkbox"><span id="gemini-consent-copy">성인 개발·평가용 Gemini 전송 안내를 확인했어요. 질문·개념·PDF 추출 텍스트가 Google에 전송될 수 있으며, 무료 티어 입력·출력은 제품 개선과 검토에 사용될 수 있어요. 개인정보·민감정보 없는 자료만 사용해요.</span><span id="claude-consent-copy" hidden>개념·질문·PDF 추출 텍스트를 ChatKHU Claude에 전송하는 데 동의해요. 새 실습 요청은 최대 1회이며 토큰 사용량에 따라 크레딧이 차감될 수 있어요. 요청 전 정확한 차감액은 확인되지 않습니다. 개인정보·민감정보 없는 자료를 사용해 주세요.</span><span id="chatkhu-consent-copy" hidden>개념·질문·PDF 추출 텍스트 또는 첨부 이미지·텍스트가 ChatKHU에 전송돼요. Claude 코드 생성과 내레이션 합성, 오류 시 코드 수정 최대 1회에 크레딧이 사용돼요. 개인정보·민감정보 없는 자료를 사용해 주세요.</span></label>
+        <label id="image-consent-option" class="consent-option" hidden><input id="image-consent" type="checkbox"><span id="image-consent-copy">첨부 이미지 원본을 Google Gemini에 전송하는 데 동의해요. 이름, 학교, 연락처 등 개인정보가 보이면 가린 뒤 올려 주세요.</span></label>
         <button id="generate" class="btn btn-primary generate-button" type="submit">학습 결과 열기 →</button>
         <p id="request-status" class="field-note" role="status" aria-live="polite">서버의 학습 모드를 확인하고 있어요.</p>
         <p id="request-error" class="error-message" role="alert" hidden></p>
@@ -77,7 +77,6 @@
       <dl id="request-summary" class="request-summary"></dl>
       <p id="grounding-note" class="field-note"></p>
       <p id="verification-note" class="field-note" hidden></p>
-      <div id="background-tools" class="background-tools" hidden></div>
       <div id="lesson-view"></div>
       <div id="video-view" hidden><p id="video-note" class="honest-note"></p><video id="result-video" controls playsinline preload="metadata" aria-label="기존 미분계수 예시 영상"></video><button id="switch-html" type="button" class="btn btn-ghost">슬라이더로도 학습하기 →</button></div>
     </div>

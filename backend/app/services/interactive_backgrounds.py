@@ -42,7 +42,7 @@ class Plan:
 plans: OrderedDict[str, Plan] = OrderedDict()
 
 
-def offer_background(description: str) -> dict:
+def offer_background(description: str, *, recommended: bool = True) -> dict:
     prompt = ("Create one wide 16:9 background illustration for an interactive educational diagram. "
               "Use an understated textbook illustration style with soft colors and simple broad shapes. "
               "Keep movement corridors uncluttered. Do not draw labels, letters, numbers, arrows, UI, or the draggable actor. "
@@ -55,7 +55,15 @@ def offer_background(description: str) -> dict:
         plans.popitem(last=False)
     token = token_urlsafe(24)
     plans[token] = Plan(prompt, now + PLAN_TTL)
-    return {"token": token, "prompt": prompt}
+    return {"token": token, "prompt": prompt, "recommended": recommended}
+
+
+def describe_scene(topic: str, landmarks) -> str:
+    placement = ("left", "center", "right")
+    height = ("upper", "middle", "lower")
+    anchors = [f"{item.label} in the {height[min(int(item.y * 3), 2)]} {placement[min(int(item.x * 3), 2)]}"
+               for item in landmarks]
+    return f"Scene context for the educational topic {topic}." + (f" Place {', '.join(anchors)}." if anchors else "")
 
 
 def get_plan(token: str) -> Plan:
@@ -94,6 +102,7 @@ async def quote_background(token: str) -> dict:
     plan.quote, plan.request_key = quote, key
     plan.quote_id = token_urlsafe(18)
     plan.quote_expires_at = monotonic() + QUOTE_TTL
+    logger.info("event=background_quote_ready model=%s credits=%s bound=%s", settings.image_model, quote["credits"], quote["bound"])
     return {**quote, "quote_id": plan.quote_id, "model": settings.image_model, "calls": 1}
 
 

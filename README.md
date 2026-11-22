@@ -1,5 +1,40 @@
-# AHA! (아하!) · Remotion 렌더러 추가
+# AHA! (아하!) · AI 개념 학습 도우미
 
+아하!는 학습 자료와 질문을 바탕으로 어려운 개념을 직접 조작하는 실습과 세로형 설명 영상으로 보여 주는 교육 AI PoC입니다. 두 학습 방식은 각각 별도의 경로에서 만들어집니다.
+
+## 제출본과 웹 버전
+
+| 구성 | 확인할 수 있는 기능 |
+| --- | --- |
+| 단일 HTML 제출본 | 서버나 API 키 없이 브라우저에서 기존 수학·사회 데모, 자료 선택과 질문 입력 흐름, 고정 미분계수 실습과 내장 예시 영상을 체험합니다. |
+| FastAPI 웹 · 인터랙티브 학습 | `mock`은 고정 수학 예제를 제공합니다. 실제 생성은 학습 목표, 설명, 시각화 등을 담은 JSON 명세를 받아 프로젝트의 HTML/SVG 뷰어에서 표시합니다. 움직이는 장면에서는 배경 이미지 견적도 확인할 수 있습니다. |
+| FastAPI 웹 · 숏츠 학습 | 영상 전용 작업을 제출하고 생성 상태를 확인합니다. 생성이 완료되면 9:16 MP4를 재생하고 내려받을 수 있습니다. |
+
+별도 제출 폴더에는 단일 HTML과 함께 발표 PDF, 물의 순환 입력 이미지, 세로형 설명 MP4 두 편, 웹 사용 시연 MOV 및 파일 안내 TXT가 들어 있습니다. HTML 안에는 원본 시안의 가로형 영상이 들어 있습니다. 이 저장소의 `references/`에는 원본 HTML과 12쪽 기획 PDF를 보존합니다. 제출용 PDF는 별도로 개정한 11쪽 발표 자료입니다.
+
+## API 키 없이 시작하기
+
+Python 3.11 이상이 필요합니다. 저장소 루트에서 실행합니다.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements.txt
+AHA_AI_PROVIDER=mock AHA_VIDEO_RENDERER=svg \
+  python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765 --workers 1
+```
+
+[로컬 웹 화면](http://127.0.0.1:8765)에서 **내 자료로 시작하기**를 눌러 예시 질문을 입력하고 **인터랙티브 학습**을 선택합니다. `f(x)=x²`의 할선 기울기가 접선 기울기 2로 수렴하는 고정 예제를 확인할 수 있습니다. mock으로 새 MP4까지 만들려면 아래 [웹 숏츠 실행](#웹-숏츠-실행) 항목의 렌더링 도구가 추가로 필요합니다.
+
+`AHA_AI_PROVIDER`는 학습·스토리보드 생성 모드를, `AHA_VIDEO_RENDERER`는 웹 숏츠 처리 경로를 선택합니다. API 키는 서버의 `.env`에 설정합니다.
+
+| 웹 숏츠 렌더러 | 생성 경로 | 추가 준비 |
+| --- | --- | --- |
+| `svg` (기본) | mock 또는 Gemini 스토리보드 → HTML/SVG 프레임 → MP4 | macOS 한국어 음성, Chrome/Chromium, FFmpeg/ffprobe |
+| `remotion` | mock 또는 Gemini 스토리보드 → React/Remotion 프레임 → MP4. 물의 순환 전용 애니메이션과 다른 주제의 텍스트 대체 화면을 제공합니다. | 위 도구와 Node.js, `video-remotion/` 의존성 |
+| `claude` | ChatKHU Claude가 대본·시각화 TSX를 작성하고, ChatKHU TTS와 격리된 Remotion 렌더러가 MP4를 만듭니다. | `CHATKHU_API_KEY`, Docker 이미지, 호스트 FFmpeg/ffprobe. 웹에서 선택하면 `AHA_AI_PROVIDER=mock`이어도 동의 후 ChatKHU를 호출합니다. |
+
+구현 당시의 생성 사례와 시험 결과는 [단계별 개발 기록](docs/IMPLEMENTATION_PLAN.md)과 각 단계 문서를 참고하세요.
 
 ## Claude 기반 범용 학습 숏츠
 
@@ -7,10 +42,12 @@
 
 ```bash
 docker build -t aha-remotion-isolated:1 video-remotion
-AHA_VIDEO_RENDERER=claude .venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --workers 1
+AHA_VIDEO_RENDERER=claude .venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765 --workers 1
 ```
 
-`.env`의 ChatKHU 인증·TTS 설정을 사용합니다. `VIDEO_CODE_MODEL`과 `VIDEO_REPAIR_MODEL`의 기본값은 모두 `claude-opus-5-5`입니다. 이 모드의 숏츠 폼에서 PDF, PNG/JPEG/WebP, UTF-8 TXT를 첨부할 수 있습니다. API의 `material_text` 필드에도 참고 텍스트를 입력할 수 있습니다. 첨부 이미지 자체는 Claude의 참고 입력으로 전송됩니다. 동의 화면에서 전송과 크레딧 사용을 안내합니다.
+`.env`의 ChatKHU 인증·TTS 설정을 사용합니다. `VIDEO_CODE_MODEL`과 `VIDEO_REPAIR_MODEL`의 코드 기본값은 모두 `claude-opus-5-5`입니다. 이 모드의 숏츠 폼에서는 약 30초 분량을 목표로 하며 실제 길이는 음성 길이에 따라 결정됩니다. PDF, PNG/JPEG/WebP, UTF-8 TXT를 첨부할 수 있고 API의 `material_text` 필드에도 참고 텍스트를 입력할 수 있습니다. 첨부 이미지 자체는 Claude의 참고 입력으로 전송됩니다. 동의 화면에서 전송과 크레딧 사용을 안내합니다.
+
+미분계수 MP4의 실제 렌더링 사례는 사람이 검토·수정한 초안을 재사용한 결과입니다. 검증 절차와 범위는 [Claude 숏츠 개발 기록](docs/CLAUDE_VIDEO_NOTES.md#미분계수-실계정-결과)을 참고하세요.
 
 실제 코드 생성 1회와 TTS 최대 1회가 한 작업에 들어갑니다. 코드 검사나 렌더/인코딩 실패에서만 같은 대본을 유지한 채 코드 수정 1회를 시도합니다. 이미지 생성과 영상 생성 API 호출은 0회입니다. Docker 이미지 확인에 실패하면 Claude 요청 전 중단합니다. 입력·출력 토큰, 모델, 응답 시간, 반환된 차감 정보와 오류 코드는 `tmp/video-jobs/<job-id>/code-*/report.json`에 기록됩니다. 대본과 TSX는 같은 비공개 디렉터리에서 디버깅할 수 있고 웹에서 제공하지 않습니다. 작업 만료·삭제·서버 종료 시 함께 정리됩니다.
 
@@ -101,7 +138,9 @@ Remotion4.0.545, React19.2.4, TypeScript5.9.3을 package-lock으로 고정했습
 
 ## Phase 3-D · 승인형 멀티모달 영상 합성
 
-ChatKHU 이미지·영상·한국어 TTS Provider를 구현하고 각각 승인된 실제 생성1회를 검증했습니다. 기존 StoryboardSpec에 별도 `MediaPlan`을 연결해 로컬 AI 이미지·영상·음성과 SVG·자막을 FFmpeg로 합성합니다. 물의 순환 A/B/C 비교 결과는 `tmp/chatkhu/comparison/verified-preview/`와 `verified-full/`에 저장합니다. 기존 Gemini HTML/스토리보드와 Phase 3-C 웹은 유지하며, 웹 작업은 계속 로컬 SVG/TTS를 사용합니다. ChatKHU 과금 생성은 별도 승인형 CLI에서만 실행합니다.
+ChatKHU 이미지·영상·한국어 TTS Provider를 구현하고 각각 승인된 실제 생성 1회를 검증했습니다. 기존 StoryboardSpec에 별도 `MediaPlan`을 연결해 로컬 AI 이미지·영상·음성과 SVG·자막을 FFmpeg로 합성합니다. 당시 물의 순환 A/B/C 비교 결과는 로컬 `tmp/chatkhu/comparison/verified-preview/`와 `verified-full/`에 저장했습니다.
+
+이 절의 **MediaPlan 합성과 이미지·영상 생성 실험**은 CLI에서 실행합니다. 웹에서 ChatKHU를 사용하는 경로는 별도로 제공됩니다. 인터랙티브 장면의 배경은 견적을 보고 승인하면 이미지를 생성하고, `claude` 숏츠는 전송 및 크레딧 사용에 동의한 뒤 Claude와 TTS를 호출합니다.
 
 ```dotenv
 CHATKHU_API_KEY=로컬에서만_설정
@@ -175,27 +214,24 @@ python tests/browser_rendered_videos.py tmp/chatkhu/comparison/verified-preview
 
 MediaPlan·자산은 worker 임시 폴더로 복사해 기존 시간/디스크/단일 실행/취소 정책 안에서 처리합니다. 미디어당100MiB·복사 합계256MiB, 원본 이미지/영상4096px·영상60초·외부 음성120초 상한이며 worker에 API 키를 전달하지 않습니다. 물의 순환 `requires_mask` 결과는 검토한 상단30%·하단20%만 합성하고 중앙을 제외합니다. 다른 자산에 이 크롭이 안전하다고 자동 판정하지 않습니다.
 
-기존 랜딩·수학·사회 데모를 유지하고 FastAPI에 **자료 업로드 → 질문 → 학습 방식 → JSON 학습 명세 → 인터랙티브 학습**을 연결했습니다.
+## 웹 숏츠 실행
 
-웹의 인터랙티브 학습은 Gemini 모드에서 입력한 주제별 실습을 생성합니다. mock 모드에서는 수학 II의 **f(x)=x², a=1에서 할선→접선·미분계수** 예제를 엽니다. Phase 3-C의 숏츠는 별도 경로로 동작하며 자료와 질문을 바탕으로 MP4 생성 상태, 재생, 다운로드를 제공합니다.
-
-## Phase 3-C · 웹에서 숏츠 만들기
-
-먼저 아래 Phase 3-B 항목의 로컬 음성·Chrome/Chromium·FFmpeg 의존성을 준비하세요. `.env`의 Gemini 키를 그대로 보존하며 설정 예시는 `.env.example`에 있습니다.
+`svg` 또는 `remotion`으로 만들려면 아래 Phase 3-B 항목의 로컬 음성·Chrome/Chromium·FFmpeg 의존성을 준비하세요. `claude`는 위의 Docker와 ChatKHU 설정을 사용합니다.
 
 ```bash
 source .venv/bin/activate
 python -m pip install -r requirements-render.txt
 
 # 개발·심사용: 실제 AI 호출 없이 mock 스토리보드 + 실제 한국어 MP4
-AHA_AI_PROVIDER=mock AHA_VIDEO_PREVIEW=true AHA_VIDEO_FPS=3 \
+AHA_AI_PROVIDER=mock AHA_VIDEO_RENDERER=svg AHA_VIDEO_PREVIEW=true AHA_VIDEO_FPS=3 \
   python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8766 --workers 1
 
-# .env의 Gemini 설정으로 실행. 사용자가 동의한 새 작업만 실제 AI를 호출합니다.
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765 --workers 1
+# .env에 GEMINI_API_KEY를 설정한 뒤 Gemini 스토리보드 사용
+AHA_AI_PROVIDER=gemini AHA_VIDEO_RENDERER=svg \
+  python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765 --workers 1
 ```
 
-접속 후 개념·질문과 선택적인 PDF를 입력하고 **숏츠 학습**을 고릅니다. 설명 수준과30/45/60초를 선택해 생성합니다. Gemini 모드에서는 Google 전송 동의가 필수이며 기존 무료 티어·성인 평가용 제한은 아래 안내와 동일합니다. mock은 미분계수·물의 순환·수요와 공급·이진 탐색 예제를 실제로 렌더링합니다. mock 성공을 AI 생성 성공으로 표시하지 않습니다.
+접속 후 개념 또는 질문을 입력하고 **숏츠 학습**을 고릅니다. SVG와 Remotion의 웹 폼에서는 설명 수준과 30/45/60초를 선택할 수 있고, 텍스트 PDF를 참고 자료로 첨부할 수 있습니다. Gemini 모드에서는 Google 전송 동의가 필요합니다. mock은 미분계수·물의 순환·수요와 공급·이진 탐색의 정해진 스토리보드를 렌더링합니다.
 
 UI는 자료 분석·영상 구성·음성/애니메이션·인코딩·검사·완료를 표시합니다. 프레임 수는 worker가 기록한 실제 캡처 수이며 전체 진행 퍼센트나 완료 예상 시간은 제공하지 않습니다. 실패하면 구성/렌더링 단계와 오류 코드를 표시하고 재시도·기존 예시 영상 보기를 제공합니다. 새 영상은9:16 플레이어에서 재생하고 MP4로 다운로드할 수 있습니다. 기존 인터랙티브 학습과 원본 데모는 유지합니다.
 
@@ -206,10 +242,11 @@ UI는 자료 분석·영상 구성·음성/애니메이션·인코딩·검사·�
 | `GET /api/videos/{job_id}/file` | 소유권과 완료 상태 확인 후MP4만 제공. Range206/416·스트리밍·`?download=1` 지원 |
 | `DELETE /api/videos/{job_id}` | 대기 작업 즉시 취소. 실행 중이면202 + cancel_requested, 실제 종료·정리 후 cancelled. 완료 영상은 삭제 |
 
-입력은 `concept`(200자), `question`(2000자), 선택적 `file`(기존5MiB 제한), `consent=true`(Gemini 필수), `student_level`(foundation/high_school/advanced), `target_duration_seconds`(30–60 정수, 기본45)입니다. 기존 폼의 `format=shorts`도 허용합니다. `/api/learn`의 기존 샘플 영상 응답과 `/api/storyboard`의 JSON 응답은 호환성을 유지합니다.
+입력은 `concept`(200자), `question`(2,000자), 선택적 `file`(5 MiB), `consent=true`(Gemini 및 Claude 경로에서 필수), `student_level`(foundation/high_school/advanced), `target_duration_seconds`(30–60 정수, 기본 45)입니다. Claude 웹 폼은 목표 30초를 전달하며 API에서는 선택적 `material_text`도 받습니다. 기존 폼의 `format=shorts`도 허용합니다. `/api/learn`의 기존 샘플 영상 응답과 `/api/storyboard`의 JSON 응답은 호환성을 유지합니다.
 
 ```bash
-# mock 서버 예시. cookie jar도 비밀 값이므로 tmp/ 밖으로 공유하지 마세요.
+# 위 mock/SVG 서버에서 실행합니다. 쿠키 파일은 로컬에 보관합니다.
+mkdir -p tmp
 curl -c tmp/video-cookies.txt -X POST http://127.0.0.1:8766/api/videos \
   -F 'concept=물의 순환' -F 'question=증발과 응결의 연결을 설명해 주세요.' \
   -F 'target_duration_seconds=30' -F 'student_level=high_school'
@@ -311,10 +348,10 @@ ffmpeg -nostdin -v error -ss 5 -i tmp/videos/my-run/math.mp4 -frames:v 1 tmp/mat
 | 값 | 동작 |
 | --- | --- |
 | `mock` | HTML은 고정 수학 II 예제, 스토리보드는 개념별 템플릿. 키·외부 호출 없이 작동 |
-| `gemini` | Gemini Developer API의 실제 `generateContent` 호출. 질문·추출 텍스트로 JSON 명세 생성 |
+| `gemini` | Gemini Developer API로 JSON 명세를 생성합니다. 질문에 더해 PDF 추출 텍스트를 사용할 수 있고, 인터랙티브 학습은 동의한 원본 이미지도 받습니다. |
 | `elice` | 별도 준비 구현체. 실제 사양 확정 전에는 네트워크 호출 없이 연결 예정 오류 반환 |
 
-기본 모델은 **`gemini-3.5-flash-lite`**이며 `GEMINI_MODEL`로 바꿀 수 있습니다. 실제 생성 2건과 FastAPI·PDF·그래프·캐시 재사용을 검증했습니다. 처음 지정했던 2.5 모델의 404와 3.5의 일시적 503도 기록했습니다. 상세 결과는 [Phase 2 기록](docs/PHASE2_NOTES.md)을 참조하세요. HTTP 대역 테스트는 실제 AI 생성 성공으로 계산하지 않습니다.
+코드의 Gemini 기본값은 **`gemini-3.5-flash-lite`**이며 `GEMINI_MODEL`로 바꿀 수 있습니다. Phase 2 당시의 실제 생성과 FastAPI·PDF·그래프·캐시 검증, 모델별 오류 기록은 [Phase 2 기록](docs/PHASE2_NOTES.md)을 참조하세요.
 
 ## Phase 3-A · 범용 스토리보드 JSON
 
@@ -364,27 +401,24 @@ python scripts/check_storyboard.py --live --concept science
 
 이번 Phase 3-A에서는 실제 Gemini를 호출하지 않았습니다. HTTP 대역과 mock으로 검증했으며 새 스토리보드 스키마에 대한 실제 모델 응답 품질은 미확인입니다. 앞의 실제 생성2건은 Phase 2의 기록입니다. [Phase 3-A 개발·검증 기록](docs/PHASE3A_NOTES.md)을 참조하세요.
 
-## 로컬 실행
+## Gemini 인터랙티브 학습 실행
 
-Python **3.11 이상**. 이번 검증 환경은 macOS / Python 3.13 / Chrome입니다.
+위에서 설치한 Python 가상 환경을 사용합니다.
 
 ```bash
-python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r backend/requirements.txt
-# .env가 없는 최초 설정 때만 실행:
-cp .env.example .env
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765
+test -e .env || cp .env.example .env
+# .env에 발급받은 GEMINI_API_KEY를 설정한 뒤 실행
+AHA_AI_PROVIDER=gemini AHA_INTERACTIVE_PROVIDER=gemini AHA_VIDEO_RENDERER=svg \
+  python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765 --workers 1
 ```
 
-이미 키가 있는 `.env`는 복사 명령으로 덮어쓰지 마세요. 현재 로컬 설정에는 사용자 키를 보존하고 Gemini Provider와 3.5 모델을 지정했습니다.
-
-**http://127.0.0.1:8765** 에 접속합니다. 파일을 직접 열지 말고 서버 주소를 사용하세요.
+[로컬 웹 화면](http://127.0.0.1:8765)에 접속합니다.
 
 1. **내 자료로 시작하기**를 누릅니다.
-2. 선택적으로 5 MiB 이하의 텍스트 PDF를 올립니다.
-3. 원하는 개념이나 질문을 입력하고 **인터랙티브 학습**을 선택합니다. 예를 들어 “빛을 흡수한 뒤 광합성에서 어떤 일이 일어나나요?”를 입력할 수 있습니다.
-4. Gemini 모드에서는 전송 안내를 확인합니다.
+2. 참고 자료가 있으면 5 MiB 이하의 텍스트 PDF 또는 PNG·JPEG·WebP 이미지 한 개를 선택합니다.
+3. 원하는 개념이나 질문을 입력하고 **인터랙티브 학습**을 선택합니다. 이미지로 질문할 때는 사진만으로도 제출할 수 있습니다.
+4. Gemini 전송 안내를 확인합니다. 이미지를 선택한 경우 원본 이미지 전송 안내도 확인합니다.
 5. 만들어진 설명을 읽고 그래프 슬라이더, 단계·사건 탐색, 비교 기준 선택 등 주제에 맞는 실습과 확인 문제를 풉니다. 시각화로 표현하기 어려운 개념은 설명 카드와 확인 문제를 엽니다. 같은 입력을 다시 제출하면 캐시를 재사용합니다.
 6. 실패하면 오류를 확인하고 **기본 수학 예제 바로 열기**로 전환합니다.
 
@@ -404,8 +438,11 @@ AHA_CACHE_MAX_ENTRIES=64
 
 | 항목 | 의미 |
 | --- | --- |
-| `AHA_AI_PROVIDER` | mock / gemini / elice. `.env.example`은 안전한 로컬 체험을 위해 mock |
+| `AHA_AI_PROVIDER` | `mock`은 예제, `gemini`는 주제별 학습 및 Gemini 스토리보드를 활성화합니다. `elice`는 연동 준비 상태입니다. `.env.example`의 기본값은 `mock` |
+| `AHA_INTERACTIVE_PROVIDER` | 주제별 인터랙티브 학습 모델. Claude 연동을 지원하는 버전에서 `gemini` 또는 `claude` 선택. 코드 기본값은 `gemini` |
+| `AHA_INTERACTIVE_CLAUDE_MODEL` | ChatKHU의 인터랙티브 학습 모델. 코드 기본값 `claude-opus-5-5` |
 | `GEMINI_API_KEY` | Google AI Studio의 Gemini Developer API 키. 서버에서만 사용 |
+| `CHATKHU_API_KEY` | Claude 실습·숏츠와 장면 배경 견적·생성에서 쓰는 서버 키 |
 | `GEMINI_MODEL` | 공식 모델 ID. 기본 3.5 Flash-Lite. 자동 모델 전환 없음 |
 | `GEMINI_MAX_OUTPUT_TOKENS` | 출력 한도, 기본 4096 / 500–8192 |
 | `STORYBOARD_MAX_OUTPUT_TOKENS` | 스토리보드 전용 출력 예산, 기본8192 / 1024–16384. 기존 HTML 예산은 유지 |
@@ -413,9 +450,9 @@ AHA_CACHE_MAX_ENTRIES=64
 | `AHA_CACHE_TTL_SECONDS` | 결과 재사용 유효 시간, 기본 300 / 0–3600초. 0은 캐시 비활성화·기존 항목 제거 |
 | `AHA_CACHE_MAX_ENTRIES` | 프로세스별 최대 캐시 항목, 기본 64 / 1–128 |
 
-환경 변수는 같은 이름의 `.env` 값을 덮어씁니다. 기존 `AHA_AI_MODE`는 호환 별칭이며 새 설정과 충돌하면 오류를 냅니다. 두 항목 중 하나만 사용하는 것을 권장합니다. 서버는 요청마다 설정을 읽으므로 `.env` 설정 변경 후 화면을 새로고침하세요. 코드 변경은 서버를 재시작해야 합니다.
+프로세스 환경 변수는 같은 이름의 `.env` 값보다 우선합니다. 기존 `AHA_AI_MODE`는 호환 별칭이며 `AHA_AI_PROVIDER`와 충돌하면 오류가 납니다. 학습 Provider 설정은 요청마다 읽으므로 변경 후 화면을 새로고침하세요. 영상 작업 설정과 코드 변경은 서버를 재시작해야 반영됩니다.
 
-키는 `x-goog-api-key` 헤더에 넣고 URL 쿼리·프론트엔드·응답·일반 로그에 넣지 않습니다. `.env`는 Git에서 제외하며 정적 파일로 제공하지 않습니다. 현재 로컬 파일 권한은 600입니다.
+Gemini 키는 서버의 `x-goog-api-key` 헤더에 사용합니다. ChatKHU 키도 서버에서만 사용합니다. `.env`는 Git 추적과 정적 파일 제공 범위에서 제외합니다.
 
 ```bash
 git check-ignore .env
@@ -424,6 +461,17 @@ git ls-files .env
 ```
 
 프론트엔드 변수나 GitHub에 키를 복사하지 마세요. 키가 노출됐다면 AI Studio에서 폐기·재발급해야 합니다. 이 프로젝트는 Elice 키를 소비하거나 호출하지 않습니다.
+
+## 인터랙티브 모델 설정
+
+ChatKHU Claude 인터랙티브 연동은 이 기능이 포함된 소스에서 선택할 수 있습니다. `.env`에 `CHATKHU_API_KEY`를 설정한 뒤 아래 명령으로 실행합니다. `AHA_AI_PROVIDER=gemini`는 주제별 생성 모드를 활성화하고, `AHA_INTERACTIVE_PROVIDER=claude`는 인터랙티브 학습에 사용할 모델을 선택합니다. 기존 `format=html` API와 SVG/Remotion 숏츠의 스토리보드는 Gemini 경로를 사용합니다.
+
+```bash
+AHA_AI_PROVIDER=gemini AHA_INTERACTIVE_PROVIDER=claude AHA_VIDEO_RENDERER=svg \
+  python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8765 --workers 1
+```
+
+새 학습 명세는 동의 후 ChatKHU Messages API 호출을 한 번 시도합니다. 토큰 기반으로 크레딧이 차감될 수 있으며 이미지 첨부 시 원본 전송 동의가 추가로 필요합니다. Claude가 조작 대상, 경로, 단계별 효과와 확인 문제를 JSON으로 반환하면 서버가 명세를 검증하고 HTML/SVG로 표시합니다. 이 경로의 요청·응답 검증은 HTTP 대역 테스트로 실행할 수 있습니다. [ChatKHU Messages API](https://docs.mindlogic.ai/docs/khu/api-gateway/reference/messages-api)
 
 ## 공식 Gemini 호출 방식
 
@@ -443,7 +491,7 @@ Gemini에는 문서화된 JSON Schema 부분집합만 전달하고 길이·h 간
 
 ## 무료 티어 사용 시 주의사항
 
-- 공식 가격표에서 3.5 Flash-Lite의 무료 입력·출력을 확인했습니다. **실제 사용 가능 모델과 RPM/TPM/RPD는 프로젝트·지역·현재 정책에 따라 달라집니다.** 고정된 무료 호출 횟수를 약속하지 않습니다.
+- 실제 사용 가능 모델과 무료 할당량은 프로젝트·지역·시점에 따라 다릅니다. 모델 접근과 무료 사용 범위는 AI Studio와 공식 가격표에서 확인하세요.
 - API 키만으로 앱이 결제 연결 상태를 판별할 수 없습니다. 무료 프로젝트인지 AI Studio에서 확인하세요. 유료 프로젝트 키는 같은 호출도 과금될 수 있습니다. 앱은 유료 Elice·다른 모델·유료 Google context cache로 자동 전환하지 않습니다.
 - 429는 할당량/요청·토큰 제한을 의미합니다. 웹의 범용 인터랙티브 경로는 Gemini가 모델 과부하(503)를 알린 경우에만 같은 모델로 최대 한 번 재시도하며 최초 요청과 제한 시간을 공유합니다. Gemini가 5초를 초과하는 대기 시간을 안내하면 해당 요청은 바로 종료하고 대기 시간을 응답에 포함합니다.
 - **Gemini API 약관에는 18세 미만 대상·접근 가능 앱 제한이 있습니다.** 현재 Gemini 경로는 성인 개발자·평가자의 로컬 PoC 검증용으로 안내합니다. 고등학생 공개 서비스에 적합하다는 검토를 마친 것이 아니며, 체크박스가 이를 해결하는 연령 인증은 아닙니다.
@@ -457,7 +505,7 @@ Gemini에는 문서화된 JSON Schema 부분집합만 전달하고 길이·h 간
 
 텍스트 PDF는 최대 **20쪽·12,000자**를 별도 프로세스에서 읽습니다. 20쪽 초과, 암호화·손상·복잡도·8초 제한 초과는 오류로 안내합니다. 12,000자 이후가 잘리면 이를 표시합니다. 텍스트가 없는 스캔·빈 PDF는 읽지 못한 쪽을 안내합니다. 스캔한 쪽을 참고하려면 PNG 또는 JPEG 이미지로 올려 주세요.
 
-Gemini 모드에서 **인터랙티브 학습**을 선택하고 이미지 전송에 별도 동의하면 PNG·JPEG·WebP 원본을 Gemini에 인라인 입력으로 전달합니다. 사진만 제출하거나 질문을 함께 입력할 수 있습니다. 읽기 어려운 부분은 결과의 참고 사항에서 확인하세요. [Gemini 이미지 입력 문서](https://aistudio.google.com/docs/image-understanding?generate-content=true#inline-image)
+**인터랙티브 학습**에서 이미지 전송에 별도 동의하면 PNG·JPEG·WebP 원본을 설정된 모델에 인라인 입력으로 전달합니다. 사진만 제출하거나 질문을 함께 입력할 수 있습니다. 읽기 어려운 부분은 결과의 참고 사항에서 확인하세요. [Gemini 이미지 입력 문서](https://aistudio.google.com/docs/image-understanding?generate-content=true#inline-image)
 
 원본 파일·추출 텍스트를 영구 보관하지 않습니다. 업로드 프레임워크의 요청 중 임시 파일은 닫습니다. PDF 프로세스에는 API 키 환경 변수를 넘기지 않고, 지원 OS의 CPU 제한·Linux 주소 공간 제한을 사용합니다. 동일한 메모리 격리를 모든 OS에서 보장하지는 않습니다.
 
@@ -475,11 +523,11 @@ Gemini 모드에서 **인터랙티브 학습**을 선택하고 이미지 전송�
 
 ## JSON·수학·실행 검증
 
-범용 학습 명세에는 학습 목표, 설명, 실습 안내, 시각화, 선택형 탐색 단계, 확인 문제, 자료 인용과 참고 사항이 들어갑니다. Gemini는 질문에 맞춰 다항식 그래프, 과정, 타임라인, 비교, 상태 변화, 설명 카드 중 하나를 선택합니다. Gemini에 보내는 스키마는 구조와 필드 타입을 지정하고, 배열 길이와 숫자 범위는 서버에서 검증합니다. 그래프는 3차 이하의 계수와 좌표로 정의하며, 브라우저에서 슬라이더에 따른 값을 계산합니다. 도식의 좌표나 연결이 검증에 실패해도 단계의 이름과 내용이 유효하면 단계 선택과 이전·다음 버튼을 제공합니다. 활용할 단계가 부족하면 같은 자료의 설명을 표시합니다. 잘못된 확인 문제는 제외하며, PDF 인용은 원문과 일치하는 것만 표시합니다.
+범용 학습 명세에는 학습 목표, 설명, 실습 안내, 시각화, 선택형 탐색 단계, 확인 문제, 자료 인용과 참고 사항이 들어갑니다. 모델이 질문에 맞춰 다항식 그래프, 과정, 타임라인, 비교, 상태 변화, 설명 카드 중 하나를 제안하면 서버에서 구조와 필드 타입, 배열 길이와 숫자 범위를 검증합니다. 그래프는 3차 이하의 계수와 좌표로 정의하며, 브라우저에서 슬라이더에 따른 값을 계산합니다. 도식의 좌표나 연결이 검증에 실패해도 단계의 이름과 내용이 유효하면 단계 선택과 이전·다음 버튼을 제공합니다. 활용할 단계가 부족하면 같은 자료의 설명을 표시합니다. 잘못된 확인 문제는 제외하며, PDF 인용은 원문과 일치하는 것만 표시합니다.
 
-이동이나 변화가 중요한 주제에서는 Gemini가 움직일 대상, 배경 요소, 위치·모양·크기가 서로 다른 상태를 제안합니다. 웹 뷰어는 검증한 좌표와 허용된 도형으로 장면을 구성합니다. 그림에서 대상을 끌거나 슬라이더를 움직이면 위치와 상태 설명이 함께 바뀝니다. 과정형 도식은 연결을 선택해 그 경로를 따라 움직여 볼 수 있습니다. 움직임을 수치로 계산할 근거가 부족하면 개념 모형으로 표시합니다.
+이동이나 변화가 중요한 주제에서는 모델이 움직일 대상, 배경 요소, 위치·모양·크기가 서로 다른 상태를 제안합니다. 웹 뷰어는 검증한 좌표와 허용된 도형으로 장면을 구성합니다. 그림에서 대상을 끌거나 슬라이더를 움직이면 위치와 상태 설명이 함께 바뀝니다. 과정형 도식은 연결을 선택해 그 경로를 따라 움직여 볼 수 있습니다. 움직임을 수치로 계산할 근거가 부족하면 개념 모형으로 표시합니다.
 
-Gemini가 움직이는 장면의 공간을 설명하는 삽화를 제안하면 **AI 배경 만들기 · 무료 견적**이 나타납니다. 기존 `CHATKHU_API_KEY`와 `CHATKHU_IMAGE_MODEL`로 16:9 이미지 한 장의 견적을 확인합니다. 브라우저에서 전송할 프롬프트와 견적을 확인하고 크레딧 사용을 승인하면 서버가 생성 요청을 한 번 보냅니다. 최소 견적은 최종 상한 미확정으로 표시합니다. 첨부 파일과 질문 원문은 배경 API 요청에 포함하지 않으며, 검토 화면에 표시된 이미지 프롬프트만 보내요. [ChatKHU 이미지·견적 문서](https://docs.mindlogic.ai/docs/khu/api-gateway/reference/estimate)
+움직이는 장면의 그림 위에 **AI 배경 · 무료 견적** 버튼이 표시됩니다. 모델이 삽화를 제안하면 추천으로 표시합니다. 제안이 없어도 그림에 쓰인 요소와 위치로 프롬프트를 만들어 견적을 확인할 수 있습니다. 기존 `CHATKHU_API_KEY`와 `CHATKHU_IMAGE_MODEL`로 16:9 이미지 한 장의 견적을 확인합니다. 브라우저에서 전송할 프롬프트와 견적을 확인하고 크레딧 사용을 승인하면 서버가 생성 요청을 한 번 보냅니다. 최소 견적은 최종 상한 미확정으로 표시합니다. 검토 화면에 표시된 이미지 프롬프트를 보냅니다. 이 기능은 서버에서 제공하는 학습 화면에서 사용할 수 있습니다. [ChatKHU 이미지·견적 문서](https://docs.mindlogic.ai/docs/khu/api-gateway/reference/estimate)
 
 검증한 이미지를 장면 아래에 넣고 라벨·경로·조작 요소는 HTML/SVG가 그립니다. 배경 생성에 실패해도 실습은 계속 열려 있습니다. 견적은 5분 동안 유효하며 생성 승인은 한 번 사용할 수 있습니다. 같은 프롬프트와 모델의 성공 결과는 서버 메모리에서 최대 15분 동안 재사용할 수 있습니다. 이 크레딧 승인 흐름은 로컬 PoC용입니다.
 
@@ -501,18 +549,21 @@ Gemini가 움직이는 장면의 공간을 설명하는 삽화를 제안하면 *
 | 수학·인용·스키마 | `invalid_interactive_spec` 또는 기존 `invalid_lesson_spec` |
 | Elice 선택 | `elice_not_implemented`, 네트워크 호출 없음 |
 
-`GET /api/health`는 모드·설정 형식 확인·캐시 여부·제한 시간을 반환합니다. `ai_configured=true`는 실제 인증·생성 성공을 뜻하지 않습니다.
+`GET /api/health`는 학습 모드, 인터랙티브 학습 모델, 웹 숏츠 렌더러, 로컬 설정 확인 결과, 캐시 여부 및 제한 시간을 반환합니다. `ai_configured`는 기본 학습 모드, `interactive_configured`는 인터랙티브 경로의 로컬 설정 확인 결과입니다. 외부 API 인증과 생성 여부는 실제 요청에서 확인할 수 있습니다.
 
-`POST /api/learn`은 multipart이며 `concept`(200자), `question`(2,000자), `format=interactive|html|shorts`, 선택적 `file`, Gemini의 `consent=true`를 받습니다. `interactive`에서는 개념·질문 없이 이미지와 `image_consent=true`를 보낼 수 있습니다. `html`은 기존 미분계수 학습 명세이고 `shorts`는 기존 영상 예시입니다. 전송 확인은 캐시 조회 전에도 요구합니다.
+`POST /api/learn/background/quote`는 장면 배경의 이미지 견적을 요청하고, `POST /api/learn/background/generate`는 유효한 견적과 비용 승인을 받아 이미지를 생성합니다.
+
+`POST /api/learn`은 multipart이며 `concept`(200자), `question`(2,000자), `format=interactive|html|shorts`, 선택적 `file`을 받습니다. Gemini 동의는 `consent=true`이고 Claude 인터랙티브의 전송·크레딧 동의는 `consent=claude`입니다. 이미지만 첨부하는 경우에도 대상 서비스에 맞춰 `image_consent=true` 또는 `image_consent=claude`를 추가합니다. `html`은 기존 미분계수 학습 명세이고 `shorts`는 기존 영상 예시입니다. 전송 확인은 캐시 조회 전에도 요구합니다.
 
 ```bash
+# Gemini 인터랙티브 설정으로 실행한 서버 예시
 curl http://127.0.0.1:8765/api/health
 curl -X POST http://127.0.0.1:8765/api/learn \
   -F 'question=광합성에서 빛 에너지는 어떻게 쓰이나요?' \
   -F 'format=interactive' -F 'consent=true'
 ```
 
-응답은 `mode`, 입력, 자료 처리 상태, `generation`(Provider·모델·요청 ID·캐시·토큰), `verification`, `lesson.spec` 또는 기존 영상입니다. 앱 로그에는 요청 ID·모드·상태·오류 코드만 기록합니다. 일반 오류 응답에는 Google이 반사할 수 있는 원문을 포함하지 않습니다.
+응답에는 `mode`, 입력, 자료 처리 상태, `generation`(Provider·모델·요청 ID·캐시·토큰), `verification`, `lesson.spec` 또는 기존 영상이 담깁니다. 앱 로그에는 요청 ID, 모델, 처리 상태, 오류 코드와 호출 경로에서 수집하는 시간·사용량 등의 진단 정보를 기록합니다.
 
 ## 테스트와 실제 검증
 
@@ -532,7 +583,7 @@ Phase 3-A의155개에 Phase 3-B의 렌더링 정책·음성 길이·시간/디�
 브라우저 검증은 mock 서버를 실행해 진행합니다.
 
 ```bash
-AHA_AI_PROVIDER=mock python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8766
+AHA_AI_PROVIDER=mock AHA_VIDEO_RENDERER=svg python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8766 --workers 1
 AHA_BASE_URL=http://127.0.0.1:8766 python tests/browser_smoke.py
 AHA_BASE_URL=http://127.0.0.1:8766 python tests/browser_phase2.py
 ```
@@ -560,7 +611,8 @@ backend/app/
     base.py, __init__.py     공통 계약·Provider 선택
     mock.py                 고정 예제
     gemini.py               Google generateContent
-    chatkhu/                별도 승인형 이미지·영상·TTS Provider와 로컬 미디어 검증
+    claude_interactive.py   ChatKHU Claude의 인터랙티브 명세 생성
+    chatkhu/                ChatKHU Claude·이미지·영상·TTS 연동과 로컬 미디어 검증
     elice.py                네트워크 없는 준비 구현체
   schemas.py                학습 명세·수학·인용 검증
   storyboard_schema.py     별도 범용 영상 DSL·시간·참조 검증
@@ -568,6 +620,9 @@ backend/app/
     assets/                소유한 scene.html/css/js; 모델 코드를 받지 않음
   services/
     lessons.py              PDF → Provider → 검증 → 캐시 → 응답
+    interactive.py          주제별 실습 명세 생성과 검증
+    interactive_backgrounds.py  장면 배경의 견적·승인·이미지 생성
+    generated_video.py      Claude 대본·시각화 → TTS → 격리 Remotion 렌더링
     prompts.py              버전이 있는 프롬프트
     validation.py           공통 JSON 검증
     cache.py                메모리 TTL/LRU·동시 요청 공유
@@ -581,7 +636,9 @@ backend/app/
   routes/videos.py          생성/조회/취소/소유권 검증 파일 스트리밍
 frontend/                   기존 랜딩·폼·격리된 그래프
 frontend/static/video-jobs.js 생성 작업 폴링·복구·취소·세로형 플레이어
+video-remotion/             React/TypeScript 렌더러 및 격리 Docker 이미지
 scripts/prepare_frontend.py  원본 + 폼으로 실행 HTML 재구성
+scripts/export_submission.py 단일 HTML 제출본 내보내기
 scripts/check_gemini.py      명시적 실제 호출 검증
 scripts/check_storyboard.py  기본 mock / 명시적 --live 스토리보드 검증
 scripts/render_storyboard.py 로컬 JSON/mock → 실제 MP4; 외부 API 호출 없음
@@ -589,7 +646,7 @@ tests/                      회귀·Provider·캐시·브라우저 검증
 references/                 보존한 HTML·기획 PDF
 ```
 
-`frontend/workflow.html`을 수정하면 `python3 scripts/prepare_frontend.py`로 index를 재구성합니다. index 직접 수정은 재구성 시 덮어씁니다. 원본 Google Fonts 링크는 유지하며 연결이 없으면 시스템 글꼴을 사용합니다. 로컬 변경은 아직 GitHub에 커밋·푸시하지 않았습니다.
+`frontend/workflow.html`이나 `frontend/static/workflow.js`를 수정한 뒤 `python3 scripts/prepare_frontend.py`로 배포용 `frontend/index.html`을 다시 만듭니다. 이 스크립트는 JS 캐시 버전을 반영하고 원본 HTML의 영상 두 편을 `frontend/static/media/`에 추출합니다. 원본 Google Fonts 링크는 유지하며 연결이 없으면 시스템 글꼴을 사용합니다.
 
 ### 서버 없는 프론트엔드 제출본
 

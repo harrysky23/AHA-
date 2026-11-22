@@ -24,24 +24,92 @@
   const mix = (a, b, t) => a + (b-a)*t;
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
-  window.mountMotionScene = (parent, model, {svg, element, colors}) => {
+  function backgroundTools(parent, image, grid, offer, element) {
+    const tools = element('section', undefined, 'motion-background-tools');
+    const row = element('div', undefined, 'motion-background-row');
+    const status = element('p', offer.recommended ? 'Gemini가 배경을 제안했어요.' : '원하면 이 장면에 배경을 추가할 수 있어요.');
+    status.setAttribute('role', 'status');
+    const action = element('button','AI 배경 · 무료 견적');
+    action.type = 'button';
+    const details = element('details');
+    const prompt = element('p');
+    details.append(element('summary','ChatKHU에 전송할 배경 설명'), prompt);
+    details.hidden = true;
+    row.append(action, status);
+    tools.append(row, details);
+    parent.prepend(tools);
+    let nextAction = 'quote';
+    let appliedMessage;
+    action.addEventListener('click', () => {
+      action.disabled = true;
+      parentWindow.postMessage({type:'aha:background-action', action:nextAction}, '*');
+    });
+    image.addEventListener('load', () => {
+      grid.setAttribute('fill', '#f8f5ff');
+      grid.setAttribute('fill-opacity', '.20');
+      status.textContent = appliedMessage;
+      details.open = false;
+    });
+    image.addEventListener('error', () => {
+      status.textContent = '받은 배경을 표시하지 못했어요. 기본 장면에서 계속 학습할 수 있어요.';
+    });
+    window.addEventListener('message', event => {
+      if (event.source !== parentWindow || event.data?.type !== 'aha:background-state') return;
+      const data = event.data;
+      switch (data.phase) {
+        case 'quoting':
+          status.textContent = 'ChatKHU에서 무료 견적을 확인하고 있어요.';
+          break;
+        case 'quoted': {
+          const credits = Number(data.credits).toLocaleString('ko-KR');
+          const wording = {exact:`${credits} 크레딧`, maximum:`최대 ${credits} 크레딧`,
+            minimum:`최소 ${credits} 크레딧 · 상한 미확정`, approximate:`약 ${credits} 크레딧 · 상한 미확정`};
+          status.textContent = `${data.model} · 16:9 이미지 1장 · ${wording[data.bound]}`;
+          action.textContent = ['exact','maximum'].includes(data.bound)
+            ? '크레딧 사용에 동의하고 1장 생성' : '상한 미확정 비용에 동의하고 1장 생성';
+          prompt.textContent = data.prompt;
+          details.hidden = false;
+          details.open = true;
+          nextAction = 'generate';
+          action.disabled = false;
+          break;
+        }
+        case 'generating':
+          status.textContent = '배경 한 장을 만들고 있어요. 그동안 실습을 조작할 수 있어요.';
+          break;
+        case 'complete':
+          action.hidden = true;
+          if (typeof data.image !== 'string' || data.image.length > 6_000_000 || !/^data:image\/(png|jpeg|webp);base64,/.test(data.image)) {
+            status.textContent = '받은 배경 형식을 확인하지 못했어요. 기본 장면에서 실습을 계속할 수 있어요.';
+            break;
+          }
+          appliedMessage = data.cached ? '기존 배경을 불러왔어요.' : '배경을 적용했어요.';
+          if (data.credits_charged != null) appliedMessage += ` 이미지 생성 차감 ${data.credits_charged} 크레딧.`;
+          status.textContent = '생성한 배경을 그림에 적용하고 있어요.';
+          image.setAttribute('href', data.image);
+          break;
+        case 'error':
+          status.textContent = `${data.message} 기본 장면에서 실습을 계속할 수 있어요.`;
+          if (!data.canRetry) {
+            action.hidden = true;
+            break;
+          }
+          nextAction = 'quote';
+          action.textContent = '무료 견적 다시 확인';
+          action.disabled = false;
+          break;
+      }
+    });
+  }
+
+  window.mountMotionScene = (parent, model, {svg, element, colors, backgroundOffer}) => {
     const scene = svg('svg', {viewBox:`0 0 ${width} ${height}`, class:'motion-scene', role:'img', 'aria-label':model.actor}, parent);
     const defs = svg('defs', {}, scene);
     const dots = svg('pattern', {id:'motion-grid', width:22, height:22, patternUnits:'userSpaceOnUse'}, defs);
     svg('circle', {cx:2,cy:2,r:1.2,fill:'#a18bcf',opacity:.36}, dots);
     const background = svg('image', {width,height, preserveAspectRatio:'xMidYMid slice', 'aria-hidden':'true'}, scene);
     const grid = svg('rect', {width,height, fill:'url(#motion-grid)'}, scene);
-    background.addEventListener('load', () => {
-      grid.setAttribute('fill', '#f8f5ff');
-      grid.setAttribute('fill-opacity', '.20');
-    });
-    window.addEventListener('message', event => {
-      if (event.source !== parentWindow || event.data?.type !== 'aha:motion-background') return;
-      const value = event.data.image;
-      if (typeof value === 'string' && value.length <= 6_000_000 && /^data:image\/(png|jpeg|webp);base64,/.test(value)) {
-        background.setAttribute('href', value);
-      }
-    });
+    if (backgroundOffer) backgroundTools(parent, background, grid, backgroundOffer, element);
     const track = model.states.map(point);
     svg('polyline', {points:coordinates(track), class:'motion-track'}, scene);
     const trail = svg('polyline', {class:'motion-trail'}, scene);
@@ -62,6 +130,7 @@
       const letters = Array.from(item.label);
       label.textContent = `${letters.slice(0, 12).join('')}${letters.length > 12 ? '…' : ''}`;
     }
+    const effects = svg('g', {class:'motion-effects', 'aria-hidden':'true'}, scene);
     const actor = svg('g', {class:'motion-actor'}, scene);
     const glow = svg('circle', {r:24, fill:'#fff', stroke:'#6c52c4', 'stroke-width':2}, actor);
     const glyph = svg('g', {}, actor);
@@ -112,6 +181,12 @@
       if (index === currentStage) return;
       currentStage = index;
       const state = model.states[index];
+      effects.replaceChildren();
+      for (const effect of state.effects || []) {
+        const {x,y} = point(effect);
+        const group = svg('g', {transform:`translate(${x} ${y}) scale(${effect.size/80})`}, effects);
+        icon(group, effect);
+      }
       glyph.replaceChildren();
       icon(glyph,state);
       title.textContent = state.label;

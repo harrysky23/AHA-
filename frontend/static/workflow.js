@@ -7,21 +7,29 @@
   let busy = false;
   let fileError = '';
   let serverMode = 'mock';
+  let interactiveProvider = 'gemini';
+  let interactiveConfigured = true;
   let videoRenderer = 'svg';
   let consentProvider = '';
+  let requestBackground;
   const isClaudeVideo = () => videoRenderer === 'claude' && form.elements.format.value === 'shorts';
   let timeoutMilliseconds = 105000;
   const scrollBehavior = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
   const formats = new Map([['pdf', 'application/pdf'], ['png', 'image/png'], ['jpg', 'image/jpeg'], ['jpeg', 'image/jpeg'], ['webp', 'image/webp'], ['txt', 'text/plain']]);
   const fileMime = (file) => formats.get(file?.name.split('.').pop().toLowerCase());
-  const usesGeminiImage = () => serverMode === 'gemini' && form.elements.format.value === 'html'
+  const usesInteractiveImage = () => serverMode === 'gemini' && form.elements.format.value === 'html'
     && fileMime(fileInput.files[0])?.startsWith('image/');
   const originalAccept = fileInput.accept;
+  const originalMaterialNote = $('material-note').textContent;
   window.addEventListener('message', (event) => {
     const iframe = $('lesson-view').querySelector('iframe');
     // Sandboxed documents have an opaque origin. Check the exact sending window
-    // and bound the only permitted message, rather than granting same-origin.
+    // and permit only resize and background actions from this viewer.
     if (!iframe || event.source !== iframe.contentWindow || event.origin !== 'null') return;
+    if (event.data?.type === 'aha:background-action') {
+      requestBackground?.(event.data.action);
+      return;
+    }
     if (event.data?.type !== 'aha:lesson-size' || !Number.isFinite(event.data.height)) return;
     if (event.data.height < 300 || event.data.height > 12000) return;
     iframe.style.height = `${Math.ceil(event.data.height) + 4}px`;
@@ -29,24 +37,30 @@
   function updateMode(mode, configured = true) {
     serverMode = mode;
     const isGemini = mode === 'gemini';
-    $('generation-mode').textContent = isGemini ? 'Gemini AI · 질문에 맞춘 실습' : mode === 'elice' ? 'Elice · 향후 연결 예정' : 'mock · 고정 수학 예제, AI 아님';
+    $('generation-mode').textContent = isGemini ? (interactiveProvider === 'claude' ? 'Claude Opus 5.5 · ChatKHU' : 'Gemini AI · 질문에 맞춘 실습') : mode === 'elice' ? 'Elice · 향후 연결 예정' : 'mock · 고정 수학 예제, AI 아님';
     $('mode-note').textContent = isGemini ? '성인 개발·평가용 Gemini 모드예요. 질문과 PDF 추출 텍스트로 설명을 구성하며 같은 입력은 캐시를 재사용해요.' : mode === 'elice' ? 'Elice는 실제 API 사양 확정 후 연결할 예정이에요. 현재 네트워크 호출은 하지 않아요.' : 'mock 모드는 질문과 관계없이 고정 수학 II 예제를 사용해요. 실제 AI 분석이나 학습 수준 진단은 아니에요.';
-    $('request-status').textContent = mode === 'elice' ? 'Elice는 아직 연결되지 않았어요. mock 또는 gemini로 설정해 주세요.' : !configured ? 'Gemini 인증 설정이 준비되지 않았어요. 서버 .env의 API 키를 확인해 주세요.' : isGemini ? 'Gemini 전송 안내를 확인한 뒤 학습 결과를 열어 주세요.' : 'mock 모드에서는 API 키 없이 체험할 수 있어요.';
+    $('request-status').textContent = mode === 'elice' ? 'Elice는 아직 연결되지 않았어요. mock 또는 gemini로 설정해 주세요.' : isGemini && interactiveProvider === 'claude' ? (interactiveConfigured ? 'ChatKHU Claude 전송 및 크레딧 안내를 확인한 뒤 학습 결과를 열어 주세요.' : '서버 .env의 ChatKHU 인증과 Claude 모델 설정을 확인해 주세요.') : !configured ? 'Gemini 인증 설정이 준비되지 않았어요. 서버 .env의 API 키를 확인해 주세요.' : isGemini ? 'Gemini 전송 안내를 확인한 뒤 학습 결과를 열어 주세요.' : 'mock 모드에서는 API 키 없이 체험할 수 있어요.';
     $('consent-option').hidden = !isGemini;
     const banner = document.querySelector('.phase-banner');
-    if (banner) banner.textContent = isGemini ? '성인 개발·평가용 Gemini AI · 인터랙티브 학습과 새 숏츠 생성' : mode === 'elice' ? 'Elice 연결은 준비 중입니다. 기존 데모와 예시 영상을 이용할 수 있어요.' : 'mock 스토리보드 + 실제 로컬 영상 렌더링 · 외부 AI 호출 없음';
+    if (banner) banner.textContent = isGemini ? (interactiveProvider === 'claude' ? 'ChatKHU Claude · 인터랙티브 학습' : '성인 개발·평가용 Gemini AI · 인터랙티브 학습과 새 숏츠 생성') : mode === 'elice' ? 'Elice 연결은 준비 중입니다. 기존 데모와 예시 영상을 이용할 수 있어요.' : 'mock 스토리보드 + 실제 로컬 영상 렌더링 · 외부 AI 호출 없음';
     updateFormat();
   }
   function updateFormat() {
     const shorts=form.elements.format.value==='shorts';
     const claude = isClaudeVideo();
-    const provider = claude ? 'chatkhu' : serverMode === 'gemini' ? 'gemini' : '';
-    if (provider !== consentProvider) $('external-consent').checked = false;
+    const claudeLesson = !shorts && serverMode === 'gemini' && interactiveProvider === 'claude';
+    const provider = claude ? 'chatkhu' : claudeLesson ? 'claude' : serverMode === 'gemini' ? 'gemini' : '';
+    if (provider !== consentProvider) {
+      $('external-consent').checked = false;
+      $('image-consent').checked = false;
+    }
     consentProvider = provider;
     $('consent-option').hidden = !provider;
     $('gemini-consent-copy').hidden = provider !== 'gemini';
     $('chatkhu-consent-copy').hidden = provider !== 'chatkhu';
-    const image = usesGeminiImage() && !fileError;
+    $('claude-consent-copy').hidden = provider !== 'claude';
+    $('image-consent-copy').textContent = `첨부 이미지 원본을 ${claudeLesson ? 'ChatKHU Claude' : 'Google Gemini'}에 전송하는 데 동의해요. 이름, 학교, 연락처 등 개인정보가 보이면 가린 뒤 올려 주세요.`;
+    const image = usesInteractiveImage() && !fileError;
     $('image-consent-option').hidden = !image;
     if (!image) $('image-consent').checked = false;
     fileInput.accept = originalAccept + (claude ? ',.txt,text/plain' : '');
@@ -61,6 +75,12 @@
       $('mode-note').textContent = '질문과 첨부 이미지의 내용을 바탕으로 실습을 구성해요.';
       $('question-note').textContent = '사진만으로도 실습을 만들 수 있어요. 특정 부분이 헷갈리면 질문을 함께 적어 주세요.';
     }
+    $('material-note').textContent = claudeLesson
+      ? '텍스트 PDF는 최대 20쪽·12,000자를 추출해요. 별도 동의한 사진은 Claude가 참고해요.'
+      : originalMaterialNote;
+    if (claudeLesson) {
+      $('mode-note').textContent = 'Claude Opus 5.5가 학습 자료와 질문에 맞춰 움직임, 상태 변화, 확인 문제를 설계해요.';
+    }
     if (claude) {
       $('scope-description').textContent = 'Claude가 질문에 맞춰 약 30초 분량의 대본과 모션그래픽을 만들어요.';
       $('mode-note').textContent = 'PDF, 이미지 또는 UTF-8 텍스트 파일을 참고 자료로 올릴 수 있어요.';
@@ -68,7 +88,7 @@
       $('video-duration').value = '30';
     }
     submit.disabled=busy || (shorts && window.AHAVideo?.active===true);
-    submit.textContent=shorts?'나만의 숏츠 만들기 →':'학습 결과 열기 →';
+    submit.textContent=shorts?'나만의 숏츠 만들기 →':claudeLesson?'Claude로 실습 만들기 →':'학습 결과 열기 →';
   }
   form.querySelectorAll('[name=format]').forEach(input => input.addEventListener('change', () => {
     clearError();
@@ -82,6 +102,8 @@
     if (!['mock','gemini','elice'].includes(data.mode)) throw new Error('mode');
     if (Number.isFinite(data.request_timeout_seconds)) timeoutMilliseconds = Math.min(110000, Math.max(15000, data.request_timeout_seconds * 1000));
     videoRenderer = data.video_renderer;
+    interactiveProvider = data.interactive_provider === 'claude' ? 'claude' : 'gemini';
+    interactiveConfigured = data.interactive_configured !== false;
     updateMode(data.mode, data.ai_configured);
   }).catch(() => { $('request-status').textContent = '서버 모드를 확인하지 못했어요. 제출 후 오류가 발생하면 기본 예제를 열 수 있어요.'; });
   function showError(message, fallback = false) {
@@ -126,27 +148,16 @@
     const detail = document.createElement('dd'); detail.textContent = value;
     $('request-summary').append(term, detail);
   }
-  function offerBackground(plan, iframe) {
-    if (!plan || typeof plan.token !== 'string' || typeof plan.prompt !== 'string') return;
-    const area = $('background-tools');
-    const action = document.createElement('button');
-    action.type = 'button';
-    action.className = 'btn btn-ghost btn-sm';
-    const status = document.createElement('p');
-    status.className = 'field-note';
-    status.setAttribute('role', 'status');
-    const details = document.createElement('details');
-    const summary = document.createElement('summary');
-    summary.textContent = 'ChatKHU에 전송할 배경 설명';
-    const prompt = document.createElement('p');
-    prompt.textContent = plan.prompt;
-    details.append(summary, prompt);
-    action.textContent = 'AI 배경 만들기 · 무료 견적';
-    status.textContent = '이 실습에는 장면의 공간을 보여 주는 배경을 추가할 수 있어요.';
-    area.append(action, status, details);
-    area.hidden = false;
+  function backgroundRequest(plan, iframe) {
     let quote;
+    let pending = false;
+    let complete = false;
 
+    function send(phase, fields = {}) {
+      if (iframe.isConnected) {
+        iframe.contentWindow.postMessage({type:'aha:background-state', phase, ...fields}, '*');
+      }
+    }
     async function post(path, fields) {
       const response = await fetch(`/api/learn/background/${path}`, {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -160,59 +171,51 @@
       }
       return data;
     }
-    action.addEventListener('click', async () => {
-      action.disabled = true;
+    return async (action) => {
+      if (pending || complete || !['quote','generate'].includes(action) || (action === 'generate' && !quote)) return;
+      pending = true;
       try {
-        if (!quote) {
-          status.textContent = 'ChatKHU에서 무료 견적을 확인하고 있어요.';
+        if (action === 'quote') {
+          send('quoting');
           quote = await post('quote');
-          const credits = Number(quote.credits).toLocaleString('ko-KR');
-          const wording = {exact:`${credits} 크레딧`, maximum:`최대 ${credits} 크레딧`,
-            minimum:`최소 ${credits} 크레딧 · 상한 미확정`, approximate:`약 ${credits} 크레딧 · 상한 미확정`};
-          status.textContent = `${quote.model} · 16:9 이미지 1장 · ${wording[quote.bound]}`;
-          action.textContent = ['exact','maximum'].includes(quote.bound)
-            ? '크레딧 사용에 동의하고 1장 생성' : '상한 미확정 비용에 동의하고 1장 생성';
-          details.open = true;
-          return;
+          send('quoted', {model:quote.model, credits:quote.credits, bound:quote.bound, prompt:plan.prompt});
+        } else {
+          send('generating');
+          const result = await post('generate', {
+            quote_id:quote.quote_id, accept_cost:true, accept_uncapped:!['exact','maximum'].includes(quote.bound),
+          });
+          complete = true;
+          send('complete', result);
         }
-        status.textContent = '배경 한 장을 만드는 중이에요. 지금도 실습을 조작할 수 있어요.';
-        const result = await post('generate', {
-          quote_id:quote.quote_id, accept_cost:true, accept_uncapped:!['exact','maximum'].includes(quote.bound),
-        });
-        if (iframe.isConnected) iframe.contentWindow.postMessage({type:'aha:motion-background', image:result.image}, '*');
-        status.textContent = result.cached ? '기존 배경을 불러왔어요.' : '배경을 적용했어요.';
-        if (result.credits_charged != null) status.textContent += ` 이미지 생성 차감 ${result.credits_charged} 크레딧.`;
-        action.hidden = true;
-        details.open = false;
       } catch (error) {
-        status.textContent = `${error.message} 기본 장면에서 실습을 계속할 수 있어요.`;
-        action.hidden = Boolean(quote) && !['background_quote_required','background_busy'].includes(error.code);
+        const canRetry = action === 'quote' || ['background_quote_required','background_busy'].includes(error.code);
         quote = null;
-        action.textContent = '무료 견적 다시 확인';
+        complete = !canRetry;
+        send('error', {message:error.message, canRetry});
       } finally {
-        action.disabled = false;
+        pending = false;
       }
-    });
+    };
   }
   function render(data) {
     // Only locally owned, allowlisted viewers are accepted. Never inject response HTML.
-    if (!['local_demo','mock','gemini'].includes(data.mode) || !['html', 'shorts'].includes(data.format)) throw new Error('지원하지 않는 학습 응답이에요.');
+    if (!['local_demo','mock','gemini','claude'].includes(data.mode) || !['html', 'shorts'].includes(data.format)) throw new Error('지원하지 않는 학습 응답이에요.');
     if (data.format === 'html' && !['/lessons/secant-tangent', '/lessons/interactive'].includes(data.lesson?.viewer_url)) throw new Error('학습 예제 주소를 확인할 수 없어요.');
     if (data.format === 'shorts' && data.video?.url !== '/static/media/derivative-explainer.mp4') throw new Error('영상 예제 주소를 확인할 수 없어요.');
     $('result-video').pause();
     $('result-video').removeAttribute('src'); $('result-video').load();
     $('lesson-view').replaceChildren();
-    $('background-tools').replaceChildren();
-    $('background-tools').hidden = true;
+    requestBackground = null;
     $('request-summary').replaceChildren();
     $('result-title').textContent = data.title;
-    $('result-mode').textContent = data.fallback ? '기본 예제 · API 연결 없이 열기' : data.mode === 'gemini' ? (data.generation?.cached ? 'Gemini AI · 캐시 재사용' : 'Gemini AI · 구조화 명세 검증 통과') : data.mode === 'mock' ? 'mock · 고정 예제, AI 아님' : '기존 예시 영상 · 새 생성 아님';
+    const modelLabel = data.mode === 'claude' ? 'Claude Opus 5.5 · ChatKHU' : 'Gemini AI';
+    $('result-mode').textContent = data.fallback ? '기본 예제 · API 연결 없이 열기' : ['gemini','claude'].includes(data.mode) ? `${modelLabel} · ${data.generation?.cached ? '캐시 재사용' : '구조화 명세 검증 통과'}` : data.mode === 'mock' ? 'mock · 고정 예제, AI 아님' : '기존 예시 영상 · 새 생성 아님';
     $('result-notice').textContent = data.notice;
     appendSummary('개념', data.request.concept || '입력하지 않음');
     appendSummary('질문', data.request.question || '입력하지 않음');
     const material = data.material;
     const materialStatus = material?.sent_to_provider
-      ? (material.content_type.startsWith('image/') ? 'Gemini에 이미지 전달' : 'Gemini에 추출 텍스트 전달')
+      ? `${data.mode === 'claude' ? 'ChatKHU Claude' : 'Gemini'}에 ${material.content_type.startsWith('image/') ? '이미지' : '추출 텍스트'} 전달`
       : material?.analyzed && data.generation?.cached ? '같은 자료의 캐시 재사용'
       : material?.text_extracted ? '텍스트 추출 완료' : '내용 분석 안 됨';
     appendSummary('학습 자료', material ? `${material.filename} · ${material.size_bytes.toLocaleString()} bytes · ${materialStatus}` : '없음');
@@ -227,14 +230,16 @@
       iframe.setAttribute('sandbox', 'allow-scripts');
       iframe.setAttribute('allow', "camera 'none'; microphone 'none'; geolocation 'none'");
       iframe.referrerPolicy = 'no-referrer';
+      const plan = data.lesson.background;
+      if (plan && typeof plan.token === 'string') requestBackground = backgroundRequest(plan, iframe);
       if (data.lesson.spec) {
         iframe.addEventListener('load', () => {
-          iframe.contentWindow.postMessage({type:'aha:lesson-spec', spec:data.lesson.spec}, '*');
+          const background = plan ? {recommended:plan.recommended === true} : null;
+          iframe.contentWindow.postMessage({type:'aha:lesson-spec', spec:data.lesson.spec, background}, '*');
         }, {once:true});
       }
       iframe.src = data.lesson.viewer_url;
       $('lesson-view').append(iframe);
-      offerBackground(data.lesson.background, iframe);
     } else {
       $('video-note').textContent = data.video.notice;
       $('result-video').src = data.video.url;
@@ -284,22 +289,27 @@
     if (fileError) { showError(fileError); fileInput.focus(); return; }
     const concept = $('concept').value.trim();
     const question = $('question').value.trim();
-    const image = usesGeminiImage();
+    const image = usesInteractiveImage();
     if (!concept && !question && !image) { showError('어려운 개념 또는 질문을 입력해 주세요. 예시 질문도 사용할 수 있어요.'); $('concept').focus(); return; }
     if (consentProvider && !$('external-consent').checked) {
-      showError(consentProvider === 'chatkhu' ? 'ChatKHU 전송 및 크레딧 안내를 확인하고 체크해 주세요.' : 'Gemini 전송 안내를 확인하고 체크해 주세요.');
+      showError(consentProvider === 'gemini' ? 'Gemini 전송 안내를 확인하고 체크해 주세요.' : 'ChatKHU 전송 및 크레딧 안내를 확인하고 체크해 주세요.');
       $('external-consent').focus(); return;
     }
     if (image && !$('image-consent').checked) {
-      showError('첨부 이미지 원본의 Gemini 전송에 동의해 주세요.');
+      showError(`첨부 이미지 원본의 ${consentProvider === 'claude' ? 'ChatKHU Claude' : 'Gemini'} 전송에 동의해 주세요.`);
       $('image-consent').focus(); return;
     }
     const body = new FormData();
     const isShorts = form.elements.format.value === 'shorts';
     body.set('concept', concept); body.set('question', question);
     body.set('format', isShorts ? 'shorts' : serverMode === 'gemini' ? 'interactive' : 'html');
-    if ($('external-consent').checked) body.set('consent', 'true');
-    if (image) body.set('image_consent', 'true');
+    const consent = consentProvider === 'claude' ? 'claude' : 'true';
+    if ($('external-consent').checked) body.set('consent', consent);
+    if (image) body.set('image_consent', consent);
+    if (consentProvider === 'claude') {
+      $('external-consent').checked = false;
+      $('image-consent').checked = false;
+    }
     if (fileInput.files[0]) body.set('file', fileInput.files[0]);
     if (isShorts) { body.set('student_level',$('video-level').value); body.set('target_duration_seconds',$('video-duration').value); }
     busy = true; submit.disabled = true;
@@ -307,7 +317,7 @@
     const controls = [...form.querySelectorAll('input,textarea,button,select')].filter(el => el !== submit);
     controls.forEach(el => { el.disabled = true; });
     $('learning-result').hidden = true; $('result-video').pause(); $('lesson-view').replaceChildren();
-    $('background-tools').replaceChildren(); $('background-tools').hidden = true;
+    requestBackground = null;
     submit.textContent = '학습 결과 불러오는 중…'; $('request-status').textContent = '로컬 서버에서 입력을 확인하고 있어요.';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMilliseconds);

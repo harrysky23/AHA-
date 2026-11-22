@@ -25,6 +25,7 @@ class ChatKHUSettings:
     request_timeout: float = 120
     operation_timeout: float = 600
     max_polls: int = 60
+    interactive_model: str = "claude-opus-5-5"
 
     def validate(self, require_key=False):
         parsed = urlsplit(self.base_url)
@@ -55,6 +56,7 @@ def get_chatkhu_settings():
         video_model=values.get("CHATKHU_VIDEO_MODEL", "fal-ai/kling-video/v3") or "",
         tts_model=values.get("CHATKHU_TTS_MODEL", "gemini-3.1-flash-tts-preview") or "",
         code_model=values.get("VIDEO_CODE_MODEL", "claude-opus-5-5"),
-        repair_model=values.get("VIDEO_REPAIR_MODEL", "claude-opus-5-5"))
+        repair_model=values.get("VIDEO_REPAIR_MODEL", "claude-opus-5-5"),
+        interactive_model=values.get("AHA_INTERACTIVE_CLAUDE_MODEL", "claude-opus-5-5"))
     settings.validate()
     return settings

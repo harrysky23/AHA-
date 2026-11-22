@@ -287,7 +287,7 @@
     $('quiz-options').append(...options);
     $('quiz').hidden = false;
   }
-  function showLesson(spec) {
+  function showLesson(spec, backgroundOffer) {
     const renderer = Object.hasOwn(renderers, spec?.visualization?.type) && renderers[spec.visualization.type];
     if (spec?.schema_version !== 'interactive-1' || !renderer) throw new Error('viewer_spec');
     $('lesson-title').textContent = spec.title;
@@ -303,7 +303,7 @@
       $('activity').textContent = '그림 속 대상을 직접 끌거나 슬라이더를 움직여 보세요.';
       const details = element('details', undefined, 'material-steps');
       details.append(element('summary', '학습 자료에 나온 과정'), element('p', spec.activity), ...visual.children);
-      window.mountMotionScene(visual, spec.motion_scene, {svg, element, colors});
+      window.mountMotionScene(visual, spec.motion_scene, {svg, element, colors, backgroundOffer});
       visual.append(details);
     }
     if (spec.quiz) showQuiz(spec.quiz);
@@ -317,7 +317,7 @@
     if (event.source !== parent || event.data?.type !== 'aha:lesson-spec') return;
     window.removeEventListener('message', receive);
     try {
-      showLesson(event.data.spec);
+      showLesson(event.data.spec, event.data.background);
     } catch {
       $('waiting').textContent = '실습을 표시하지 못했어요. 학습 질문을 다시 제출해 주세요.';
     }

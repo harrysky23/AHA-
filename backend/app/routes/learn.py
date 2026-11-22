@@ -4,6 +4,7 @@ from pydantic import Field
 from typing import Annotated
 
 from ..config import ConfigurationError, Settings, get_settings
+from ..providers.claude_interactive import lesson_settings
 from ..schemas import StrictModel
 from ..services.errors import LearningError
 from ..services.interactive import create_interactive
@@ -46,9 +47,18 @@ async def health(request: Request, settings: Settings = Depends(get_settings)):
         except (ConfigurationError, ValueError):
             pass
     jobs = getattr(request.app.state, "video_jobs", None)
+    interactive_provider = settings.interactive_provider if settings.mode == "gemini" else settings.mode
+    interactive_configured = configured
+    if interactive_provider == "claude":
+        try:
+            lesson_settings(settings.timeout_seconds)
+            interactive_configured = True
+        except (ConfigurationError, ValueError):
+            interactive_configured = False
     return {"status":"ok", "mode":settings.mode, "external_ai":settings.mode == "gemini",
             "video_renderer": jobs.policy.renderer if jobs else "svg",
             "ai_configured":configured, "request_timeout_seconds":math.ceil(settings.timeout_seconds)+15,
+            "interactive_provider":interactive_provider, "interactive_configured":interactive_configured,
             "cache_enabled":settings.cache_ttl_seconds > 0}
 
 
@@ -70,16 +80,23 @@ async def learn(request: Request, settings: Settings = Depends(get_settings)):
                 raise HTTPException(422, f"{name} 입력은 {limit}자 이하로 입력해 주세요.")
         if fields["format"] not in {"html", "interactive", "shorts"}:
             raise HTTPException(422, "학습 방식을 선택해 주세요.")
-        if settings.mode == "gemini" and fields["format"] in {"html", "interactive"} and form.get("consent") != "true":
+        claude = settings.mode == "gemini" and fields["format"] == "interactive" and settings.interactive_provider == "claude"
+        if claude and form.get("consent") != "claude":
+            raise LearningError(
+                "claude_consent_required", "ChatKHU Claude 전송과 생성 1회 크레딧 사용에 동의해 주세요.", 428, False,
+            )
+        if not claude and settings.mode == "gemini" and fields["format"] in {"html", "interactive"} and form.get("consent") != "true":
             raise LearningError("consent_required", "Gemini 전송 안내를 확인해 주세요. 질문과 PDF 추출 텍스트가 Google Gemini에 전송될 수 있어요. 무료 티어에는 개인정보·민감정보를 보내지 마세요.", 428, False)
         material, data = await read_upload(form.get("file"))
         interactive_image = (settings.mode == "gemini" and fields["format"] == "interactive"
                              and material and material["content_type"].startswith("image/"))
         if not fields["concept"] and not fields["question"] and not interactive_image:
             raise HTTPException(422, "어려운 개념 또는 질문을 입력해 주세요.")
-        if interactive_image and form.get("image_consent") != "true":
+        if interactive_image and form.get("image_consent") != ("claude" if claude else "true"):
             raise LearningError(
-                "image_consent_required", "첨부 이미지 원본을 Gemini에 보내는 데 동의해 주세요.", 428, False,
+                "image_consent_required",
+                "첨부 이미지 원본을 ChatKHU Claude에 보내는 데 동의해 주세요." if claude
+                else "첨부 이미지 원본을 Gemini에 보내는 데 동의해 주세요.", 428, False,
             )
         if fields["format"] == "interactive":
             return await create_interactive(settings, fields["concept"], fields["question"], material, data)

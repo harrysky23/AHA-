@@ -7,11 +7,14 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 
+from backend.app.config import Settings, get_settings
 from backend.app.main import app
 from backend.app.providers.chatkhu.client import GatewayClient
 from backend.app.providers.chatkhu.settings import ChatKHUSettings
-from backend.app.services import interactive_backgrounds as backgrounds
+from backend.app.providers.gemini import GeminiProvider
+from backend.app.services import interactive, interactive_backgrounds as backgrounds
 from test_chatkhu import png
+from test_interactive import PROCESS, spec
 
 
 @pytest.fixture
@@ -69,3 +72,33 @@ def test_background_needs_current_quote_and_uncapped_approval_then_reuses_valida
     cached = browser.post(generate_url, json={**fields, "token": second["token"], "quote_id": quote["quote_id"]})
     assert cached.json() == {"image": data_url, "credits_charged": None, "cached": True}
     assert sum(path.endswith("/images/generate/") for path, _ in calls) == 1
+
+
+@pytest.mark.parametrize("description", [None, "A board with a wire coil on the right."])
+def test_motion_scene_offers_a_background_even_without_gemini_recommendation(monkeypatch, gateway, description):
+    calls, _ = gateway
+    app.dependency_overrides[get_settings] = lambda: Settings(mode="gemini", api_key="fixture-gemini-key", cache_ttl_seconds=0)
+    result = spec("전자기 유도 관찰", PROCESS)
+    result["background_prompt"] = description
+    result["motion_scene"] = {
+        "actor": "막대자석",
+        "landmarks": [{"label": "코일", "x": .72, "y": .48, "size": 75, "shape": "coil", "color": "violet"}],
+        "states": [
+            {"label": "멀리", "detail": "자석이 멀리 있어요.", "x": .2, "y": .48, "size": 55, "shape": "magnet", "color": "blue"},
+            {"label": "가까이", "detail": "코일을 지나는 자기선속이 바뀌어요.", "x": .62, "y": .48, "size": 55, "shape": "magnet", "color": "blue"},
+        ],
+    }
+    def handle(_):
+        return httpx.Response(200, json={"candidates": [{"finishReason": "STOP",
+            "content": {"parts": [{"text": json.dumps(result)}]}}]})
+
+    monkeypatch.setattr(interactive, "GeminiProvider", lambda settings: GeminiProvider(settings, httpx.MockTransport(handle)))
+    response = TestClient(app).post("/api/learn", files={
+        "question": (None, "포함하지 않을 질문 원문"), "format": (None, "interactive"), "consent": (None, "true"),
+    })
+    assert response.status_code == 200
+    offered = response.json()["lesson"]["background"]
+    assert offered["recommended"] is bool(description)
+    assert (description or "코일 in the middle right") in offered["prompt"]
+    assert "포함하지 않을 질문 원문" not in offered["prompt"]
+    assert not calls

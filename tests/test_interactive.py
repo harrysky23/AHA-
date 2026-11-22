@@ -248,7 +248,7 @@ def test_validated_motion_scene_accepts_topic_specific_objects_and_visible_chang
         ],
     }
     lesson = interactive.parse_interactive(json.dumps(response), [])
-    assert lesson.motion_scene.model_dump() == response["motion_scene"]
+    assert lesson.motion_scene.model_dump(exclude_defaults=True) == response["motion_scene"]
     response["motion_scene"]["states"][1]["shape"] = "url(https://example.test)"
     assert interactive.parse_interactive(json.dumps(response), []).motion_scene is None
     response["motion_scene"]["states"][1] = {
