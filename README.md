@@ -431,7 +431,7 @@ git ls-files .env
 
 - `POST https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent`
 - 인증: `x-goog-api-key`
-- 입력: `systemInstruction`, `contents[].parts[].text`
+- 입력: `systemInstruction`, `contents[].parts[].text`, 이미지 사용 시 `contents[].parts[].inlineData`
 - 출력 설정: `generationConfig.responseMimeType=application/json`, `responseJsonSchema`, `maxOutputTokens`
 - 응답: `candidates[].content.parts[].text`, `finishReason`, `usageMetadata`
 
@@ -451,18 +451,20 @@ Gemini에는 문서화된 JSON Schema 부분집합만 전달하고 길이·h 간
 
 관련 조건은 [Gemini API 이용약관](https://ai.google.dev/gemini-api/docs/terms)을 확인하세요.
 
-## PDF 분석과 결과 캐시
+## 이미지·PDF 분석과 결과 캐시
 
 자료는 1개 / 최대 **5 MiB**, 전체 multipart 요청은 6 MiB입니다. PDF·PNG·JPEG·WebP의 확장자·MIME·시작 서명을 검사합니다.
 
-텍스트 PDF는 최대 **20쪽·12,000자**를 별도 프로세스에서 읽습니다. 20쪽 초과, 암호화·손상·복잡도·8초 제한 초과는 오류로 안내합니다. 12,000자 이후가 잘리면 이를 표시합니다. 이미지·텍스트 없는 스캔/빈 PDF의 OCR은 미지원이며 읽지 못한 쪽을 안내합니다. 수식·표·읽기 순서는 불완전할 수 있습니다. 이미지 원본은 Gemini에 보내지 않습니다.
+텍스트 PDF는 최대 **20쪽·12,000자**를 별도 프로세스에서 읽습니다. 20쪽 초과, 암호화·손상·복잡도·8초 제한 초과는 오류로 안내합니다. 12,000자 이후가 잘리면 이를 표시합니다. 텍스트가 없는 스캔·빈 PDF는 읽지 못한 쪽을 안내합니다. 스캔한 쪽을 참고하려면 PNG 또는 JPEG 이미지로 올려 주세요.
+
+Gemini 모드에서 **인터랙티브 학습**을 선택하고 이미지 전송에 별도 동의하면 PNG·JPEG·WebP 원본을 Gemini에 인라인 입력으로 전달합니다. 사진만 제출하거나 질문을 함께 입력할 수 있습니다. 읽기 어려운 부분은 결과의 참고 사항에서 확인하세요. [Gemini 이미지 입력 문서](https://aistudio.google.com/docs/image-understanding?generate-content=true#inline-image)
 
 원본 파일·추출 텍스트를 영구 보관하지 않습니다. 업로드 프레임워크의 요청 중 임시 파일은 닫습니다. PDF 프로세스에는 API 키 환경 변수를 넘기지 않고, 지원 OS의 CPU 제한·Linux 주소 공간 제한을 사용합니다. 동일한 메모리 격리를 모든 OS에서 보장하지는 않습니다.
 
 **캐시 정책:**
 
 - Google의 유료 context cache가 아니라 서버 프로세스 내부의 TTL/LRU 결과 캐시입니다.
-- 키에는 Provider·모델·프롬프트 버전·실제 프롬프트·스키마·출력 제한·인증 범위가 반영됩니다.
+- 키에는 Provider·모델·프롬프트 버전·실제 프롬프트·스키마·출력 제한·인증 범위와 첨부 이미지의 해시·MIME이 반영됩니다.
 - 키는 프로세스별 임의 비밀값으로 만든 HMAC-SHA256이며 질문·PDF 원문·파일명·API 키를 캐시 키나 로그에 남기지 않습니다.
 - 검증한 **출력 명세만** 보관합니다. 설명·인용에 자료의 일부가 포함될 수 있습니다. 해시 키가 출력 내용까지 익명화하거나 암호화하는 것은 아닙니다.
 - 동일한 동시 입력은 한 번의 생성 요청을 공유합니다. 오류·불완전 응답·수학·인용 검증 실패는 캐시하지 않습니다.
@@ -473,7 +475,7 @@ Gemini에는 문서화된 JSON Schema 부분집합만 전달하고 길이·h 간
 
 ## JSON·수학·실행 검증
 
-범용 학습 명세에는 학습 목표, 설명, 실습 안내, 시각화, 확인 문제, 자료 인용과 참고 사항이 들어갑니다. Gemini는 질문에 맞춰 다항식 그래프, 과정, 타임라인, 비교, 상태 변화, 설명 카드 중 하나를 선택합니다. Gemini에 보내는 스키마는 구조와 필드 타입을 지정하고, 배열 길이와 숫자 범위는 서버 검증에서 적용합니다. 그래프는 3차 이하의 계수와 좌표로 정의하며, 브라우저에서 슬라이더에 따른 값을 계산합니다. 인용은 제공된 페이지의 추출 문자열과 비교합니다. 자연어 설명과 확인 문제의 정확성은 자료와 함께 검토해야 합니다.
+범용 학습 명세에는 학습 목표, 설명, 실습 안내, 시각화, 확인 문제, 자료 인용과 참고 사항이 들어갑니다. Gemini는 질문에 맞춰 다항식 그래프, 과정, 타임라인, 비교, 상태 변화, 설명 카드 중 하나를 선택합니다. Gemini에 보내는 스키마는 구조와 필드 타입을 지정하고, 배열 길이와 숫자 범위는 서버에서 검증합니다. 그래프는 3차 이하의 계수와 좌표로 정의하며, 브라우저에서 슬라이더에 따른 값을 계산합니다. 핵심 설명이 유효하면 검증에 실패한 시각화는 같은 자료의 설명 카드로 대체하고 잘못된 확인 문제는 제외합니다. PDF 인용은 원문과 일치하는 것만 표시합니다. 자연어 설명과 확인 문제의 정확성은 자료와 함께 검토해야 합니다.
 
 기존 미분계수 전용 명세의 `secant_tangent_x2`는 기존 API와 고정 예제에서 계속 사용할 수 있습니다. 함수·기준점·범위는 고정되며 h≠0의 할선 기울기 2+h, 접선 기울기 2, h=0 미정의를 코드로 검증합니다.
 
@@ -495,7 +497,7 @@ Gemini에는 문서화된 JSON Schema 부분집합만 전달하고 길이·h 간
 
 `GET /api/health`는 모드·설정 형식 확인·캐시 여부·제한 시간을 반환합니다. `ai_configured=true`는 실제 인증·생성 성공을 뜻하지 않습니다.
 
-`POST /api/learn`은 multipart이며 `concept`(200자), `question`(2,000자), `format=interactive|html|shorts`, 선택적 `file`, Gemini의 `consent=true`를 받습니다. 개념·질문 중 하나가 필수입니다. `interactive`는 Gemini 기반 범용 실습, `html`은 기존 미분계수 학습 명세, `shorts`는 기존 영상 예시입니다. 전송 확인은 캐시 조회 전에도 요구합니다.
+`POST /api/learn`은 multipart이며 `concept`(200자), `question`(2,000자), `format=interactive|html|shorts`, 선택적 `file`, Gemini의 `consent=true`를 받습니다. `interactive`에서는 개념·질문 없이 이미지와 `image_consent=true`를 보낼 수 있습니다. `html`은 기존 미분계수 학습 명세이고 `shorts`는 기존 영상 예시입니다. 전송 확인은 캐시 조회 전에도 요구합니다.
 
 ```bash
 curl http://127.0.0.1:8765/api/health

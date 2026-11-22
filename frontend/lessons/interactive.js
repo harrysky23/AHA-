@@ -184,6 +184,20 @@
     function_graph:graph, process_diagram:process, timeline, comparison,
     state_transition:stateTransition, text_explanation:explanation,
   };
+  function showQuiz(quiz) {
+    $('quiz-question').textContent = quiz.question;
+    const options = quiz.options.map((option, index) => button(option, () => {
+      options.forEach((control, i) => control.setAttribute('aria-pressed', String(index === i)));
+      const result = $('quiz-result');
+      result.hidden = false;
+      result.textContent = index === quiz.correct_index
+        ? `정답이에요! ${quiz.explanation}`
+        : '다시 생각해 보세요. 실습 내용으로 돌아가 확인할 수 있어요.';
+    }));
+    options.forEach(control => control.setAttribute('aria-pressed', 'false'));
+    $('quiz-options').append(...options);
+    $('quiz').hidden = false;
+  }
   function showLesson(spec) {
     const renderer = Object.hasOwn(renderers, spec?.visualization?.type) && renderers[spec.visualization.type];
     if (spec?.schema_version !== 'interactive-1' || !renderer) throw new Error('viewer_spec');
@@ -192,22 +206,12 @@
     $('explanation').textContent = spec.explanation;
     $('activity').textContent = spec.activity;
     renderer(spec.visualization);
-    $('quiz-question').textContent = spec.quiz.question;
-    const options = spec.quiz.options.map((option, index) => button(option, () => {
-      options.forEach((control, i) => control.setAttribute('aria-pressed', String(index === i)));
-      const result = $('quiz-result');
-      result.hidden = false;
-      result.textContent = index === spec.quiz.correct_index
-        ? `정답이에요! ${spec.quiz.explanation}`
-        : '다시 생각해 보세요. 실습 내용으로 돌아가 확인할 수 있어요.';
-    }));
-    options.forEach(control => control.setAttribute('aria-pressed', 'false'));
-    $('quiz-options').append(...options);
+    if (spec.quiz) showQuiz(spec.quiz);
     const sources = [...spec.source_quotes.map(source => `PDF ${source.page}쪽 · ${source.quote}`), ...spec.limitations];
     $('source-list').append(...sources.map(source => element('li', source)));
     $('sources').hidden = !sources.length;
     $('waiting').hidden = true;
-    for (const section of [$('lesson-title').closest('header'), $('practice'), $('quiz')]) section.hidden = false;
+    for (const section of [$('lesson-title').closest('header'), $('practice')]) section.hidden = false;
   }
   function receive(event) {
     if (event.source !== parent || event.data?.type !== 'aha:lesson-spec') return;

@@ -13,6 +13,9 @@
   let timeoutMilliseconds = 105000;
   const scrollBehavior = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
   const formats = new Map([['pdf', 'application/pdf'], ['png', 'image/png'], ['jpg', 'image/jpeg'], ['jpeg', 'image/jpeg'], ['webp', 'image/webp'], ['txt', 'text/plain']]);
+  const fileMime = (file) => formats.get(file?.name.split('.').pop().toLowerCase());
+  const usesGeminiImage = () => serverMode === 'gemini' && form.elements.format.value === 'html'
+    && fileMime(fileInput.files[0])?.startsWith('image/');
   const originalAccept = fileInput.accept;
   window.addEventListener('message', (event) => {
     const iframe = $('lesson-view').querySelector('iframe');
@@ -43,6 +46,9 @@
     $('consent-option').hidden = !provider;
     $('gemini-consent-copy').hidden = provider !== 'gemini';
     $('chatkhu-consent-copy').hidden = provider !== 'chatkhu';
+    const image = usesGeminiImage() && !fileError;
+    $('image-consent-option').hidden = !image;
+    if (!image) $('image-consent').checked = false;
     fileInput.accept = originalAccept + (claude ? ',.txt,text/plain' : '');
     $('video-renderer-note').hidden = claude;
     $('video-duration').disabled = claude;
@@ -51,6 +57,10 @@
     $('scope-description').textContent=shorts?'수학·과학·사회·정보 개념을 30–60초의 세로형 영상으로 구성해요. 어려운 표현은 텍스트 설명으로 바꿀 수 있어요.':serverMode==='gemini'?'질문에 어울리는 그래프, 과정, 비교 등으로 직접 탐색하고 확인 문제를 풀 수 있어요.':'수학 II · f(x)=x², 점 P(1,1)에서 할선의 기울기 2+h → 접선의 기울기 2';
     $('mode-note').textContent=serverMode==='gemini'?'질문과 PDF 추출 텍스트로 설명을 구성하며 같은 입력의 생성 명세는 캐시를 재사용해요.':serverMode==='elice'?'Elice는 실제 API 사양 확정 후 연결할 예정이에요.':shorts?'mock은 네 가지 개념의 스토리보드 예제를 실제 영상으로 만들어요. AI 분석 결과가 아니에요.':'mock은 질문과 관계없이 고정 수학 II 예제를 사용해요. AI 분석 결과가 아니에요.';
     $('question-note').textContent=shorts?'개념이나 질문 중 하나를 입력해 주세요. mock 예제: 미분계수, 물의 순환, 수요와 공급, 이진 탐색.':'개념이나 질문 중 하나를 입력해 주세요. 특히 헷갈리는 부분을 적으면 실습에 반영할 수 있어요.';
+    if (image) {
+      $('mode-note').textContent = '질문과 첨부 이미지의 내용을 바탕으로 실습을 구성해요.';
+      $('question-note').textContent = '사진만으로도 실습을 만들 수 있어요. 특정 부분이 헷갈리면 질문을 함께 적어 주세요.';
+    }
     if (claude) {
       $('scope-description').textContent = 'Claude가 질문에 맞춰 약 30초 분량의 대본과 모션그래픽을 만들어요.';
       $('mode-note').textContent = 'PDF, 이미지 또는 UTF-8 텍스트 파일을 참고 자료로 올릴 수 있어요.';
@@ -92,14 +102,20 @@
       $('file-status').textContent = '자료 없이 질문만 입력해도 괜찮아요.';
       return;
     }
-    const expected = formats.get(file.name.split('.').pop().toLowerCase());
+    const expected = fileMime(file);
     if (!expected || (expected === 'text/plain' && !isClaudeVideo()) || (file.type && expected !== file.type)) fileError = isClaudeVideo() ? 'PDF, PNG, JPEG, WebP, TXT 파일을 선택해 주세요.' : 'PDF, PNG, JPEG, WebP 파일을 선택해 주세요.';
     else if (!file.size) fileError = '빈 파일은 올릴 수 없어요.';
     else if (file.size > 5 * 1024 * 1024) fileError = '파일은 5MB 이하로 올려 주세요.';
     $('file-status').textContent = fileError || `${file.name} · ${(file.size / 1024).toFixed(1)}KB · 선택 완료`;
   }
-  fileInput.addEventListener('change', () => { clearError(); checkFile(); });
-  $('remove-file').addEventListener('click', () => { fileInput.value = ''; checkFile(); clearError(); });
+  function updateFile() {
+    $('image-consent').checked = false;
+    clearError();
+    checkFile();
+    updateFormat();
+  }
+  fileInput.addEventListener('change', updateFile);
+  $('remove-file').addEventListener('click', () => { fileInput.value = ''; updateFile(); });
   $('sample-input').addEventListener('click', () => {
     $('concept').value = '미분계수의 기하학적 의미';
     $('question').value = 'f(x)=x²의 점 P(1,1)에서 할선의 기울기는 왜 접선의 기울기 2에 가까워지나요?';
@@ -124,7 +140,12 @@
     $('result-notice').textContent = data.notice;
     appendSummary('개념', data.request.concept || '입력하지 않음');
     appendSummary('질문', data.request.question || '입력하지 않음');
-    appendSummary('학습 자료', data.material ? `${data.material.filename} · ${data.material.size_bytes.toLocaleString()} bytes · ${data.material.sent_to_provider ? 'Gemini에 추출 텍스트 전달' : data.material.analyzed && data.generation?.cached ? '같은 자료의 캐시 재사용, 이번에는 전송 안 함' : data.material.text_extracted ? '텍스트 추출 완료' : '내용 분석 안 됨'}` : '없음');
+    const material = data.material;
+    const materialStatus = material?.sent_to_provider
+      ? (material.content_type.startsWith('image/') ? 'Gemini에 이미지 전달' : 'Gemini에 추출 텍스트 전달')
+      : material?.analyzed && data.generation?.cached ? '같은 자료의 캐시 재사용'
+      : material?.text_extracted ? '텍스트 추출 완료' : '내용 분석 안 됨';
+    appendSummary('학습 자료', material ? `${material.filename} · ${material.size_bytes.toLocaleString()} bytes · ${materialStatus}` : '없음');
     $('grounding-note').textContent = data.grounding.message;
     $('verification-note').hidden = !data.verification;
     $('verification-note').textContent = data.verification?.notice || '';
@@ -192,16 +213,22 @@
     if (fileError) { showError(fileError); fileInput.focus(); return; }
     const concept = $('concept').value.trim();
     const question = $('question').value.trim();
-    if (!concept && !question) { showError('어려운 개념 또는 질문을 입력해 주세요. 예시 질문도 사용할 수 있어요.'); $('concept').focus(); return; }
+    const image = usesGeminiImage();
+    if (!concept && !question && !image) { showError('어려운 개념 또는 질문을 입력해 주세요. 예시 질문도 사용할 수 있어요.'); $('concept').focus(); return; }
     if (consentProvider && !$('external-consent').checked) {
       showError(consentProvider === 'chatkhu' ? 'ChatKHU 전송 및 크레딧 안내를 확인하고 체크해 주세요.' : 'Gemini 전송 안내를 확인하고 체크해 주세요.');
       $('external-consent').focus(); return;
+    }
+    if (image && !$('image-consent').checked) {
+      showError('첨부 이미지 원본의 Gemini 전송에 동의해 주세요.');
+      $('image-consent').focus(); return;
     }
     const body = new FormData();
     const isShorts = form.elements.format.value === 'shorts';
     body.set('concept', concept); body.set('question', question);
     body.set('format', isShorts ? 'shorts' : serverMode === 'gemini' ? 'interactive' : 'html');
     if ($('external-consent').checked) body.set('consent', 'true');
+    if (image) body.set('image_consent', 'true');
     if (fileInput.files[0]) body.set('file', fileInput.files[0]);
     if (isShorts) { body.set('student_level',$('video-level').value); body.set('target_duration_seconds',$('video-duration').value); }
     busy = true; submit.disabled = true;

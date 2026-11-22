@@ -103,7 +103,7 @@ async def configuration_error(request, exc: ConfigurationError):
 
 @app.get("/", include_in_schema=False)
 async def index():
-    return FileResponse(FRONTEND / "index.html")
+    return FileResponse(FRONTEND / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/lessons/secant-tangent", response_class=HTMLResponse, include_in_schema=False)
@@ -115,7 +115,9 @@ async def lesson():
 async def interactive_lesson():
     directory = FRONTEND / "lessons"
     html = (directory / "interactive.html").read_text(encoding="utf-8")
-    return lesson_response(html.replace("__INTERACTIVE_SCRIPT__", (directory / "interactive.js").read_text(encoding="utf-8")))
+    response = lesson_response(html.replace("__INTERACTIVE_SCRIPT__", (directory / "interactive.js").read_text(encoding="utf-8")))
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 def lesson_response(html: str) -> HTMLResponse:

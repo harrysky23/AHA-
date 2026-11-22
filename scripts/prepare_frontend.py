@@ -35,7 +35,9 @@ html = html.replace('우리 학교 교재·선생님 필기 표현 그대로', '
 html = html.replace('<h4>TTS 음성 해설</h4>', '<h4>기존 영상의 음성 해설</h4>')
 html = html.replace('class="tag">음성 해설', 'class="tag">기존 예시 영상')
 html = html.replace('<body>', '<body>\n<div class="phase-banner">서버 모드를 확인 중입니다. 인터랙티브 학습과 세로형 숏츠 생성을 제공합니다.</div>')
-html = html.replace('</body>', '<script src="/static/workflow.js" defer></script>\n<script src="/static/video-jobs.js" defer></script>\n</body>')
+# Form markup and its controller must be updated together, including on cached browsers.
+workflow_version = hashlib.sha256((ROOT / "frontend/static/workflow.js").read_bytes()).hexdigest()[:12]
+html = html.replace('</body>', f'<script src="/static/workflow.js?v={workflow_version}" defer></script>\n<script src="/static/video-jobs.js" defer></script>\n</body>')
 (ROOT / 'frontend/index.html').write_text(html)
 print('Reference SHA256:', hashlib.sha256(source.read_bytes()).hexdigest())
 print('Created frontend/index.html and extracted two original MP4 assets')

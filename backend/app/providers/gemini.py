@@ -1,5 +1,6 @@
 """Google Gemini Developer API: documented generateContent REST, data-only output."""
 import asyncio
+from base64 import b64encode
 import logging
 import math
 
@@ -122,14 +123,19 @@ class GeminiProvider:
         text, usage = self.response_text(envelope)
         return StoryboardResult(parse_storyboard(text, request), self.model, usage)
 
-    async def generate_json(self, messages: list[dict], schema: dict, max_output_tokens: int, request_id: str) -> dict:
+    async def generate_json(self, messages: list[dict], schema: dict, max_output_tokens: int, request_id: str,
+                            *, image: tuple[str, bytes] | None = None) -> dict:
         try:
             self.settings.validate_gemini()
         except ConfigurationError:
             raise LearningError("gemini_not_configured", "Gemini 설정이 부족해요. 서버 .env의 GEMINI_API_KEY와 GEMINI_MODEL을 확인해 주세요.", 503) from None
+        parts = [{"text": messages[1]["content"]}]
+        if image is not None:
+            mime, data = image
+            parts.append({"inlineData": {"mimeType": mime, "data": b64encode(data).decode("ascii")}})
         payload = {
             "systemInstruction": {"parts":[{"text":messages[0]["content"]}]},
-            "contents":[{"role":"user", "parts":[{"text":messages[1]["content"]}]}],
+            "contents":[{"role":"user", "parts":parts}],
             "generationConfig":{"responseMimeType":"application/json", "responseJsonSchema":schema,
                                 "maxOutputTokens":max_output_tokens},
         }

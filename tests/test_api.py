@@ -33,6 +33,15 @@ def test_health_and_reference_preservation():
         assert b'ftyp' in result.content
 
 
+def test_landing_revalidates_and_loads_current_workflow_script():
+    page = client.get('/')
+    assert page.headers['cache-control'] == 'no-cache'
+    assert 'id="image-consent"' in page.text
+    script = client.get('/static/workflow.js')
+    version = hashlib.sha256(script.content).hexdigest()[:12]
+    assert f'src="/static/workflow.js?v={version}"' in page.text
+
+
 def test_deterministic_html_and_isolated_viewer():
     response = learn(concept='미분계수', question='왜 2인가요?', format='html')
     assert response.status_code == 200

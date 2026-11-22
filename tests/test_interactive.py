@@ -1,3 +1,4 @@
+from base64 import b64decode
 import json
 
 import httpx
@@ -10,6 +11,7 @@ from backend.app.providers.gemini import GeminiProvider
 from backend.app.services import interactive
 from pdf_fixture import pdf_bytes
 
+PNG = b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=")
 PROCESS = {
     "type": "process_diagram", "flow": "sequence",
     "nodes": [
@@ -103,6 +105,48 @@ def test_new_route_checks_consent_before_generation(fixture_provider):
     assert not fixture_provider
 
 
+def test_interactive_image_requires_specific_consent_and_keys_cache_by_image(monkeypatch):
+    client = TestClient(app)
+    requests = []
+    interactive.interactive_cache.clear()
+    app.dependency_overrides[get_settings] = lambda: Settings(mode="gemini", api_key="stand-in-key")
+
+    def handle(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={"candidates": [{"finishReason": "STOP", "content": {
+            "parts": [{"text": json.dumps(spec("사진 속 개념 실습", GRAPH))}],
+        }}]})
+
+    monkeypatch.setattr(interactive, "GeminiProvider", lambda settings: GeminiProvider(settings, httpx.MockTransport(handle)))
+
+    def submit(image, *, consent=True):
+        data = {"format": "interactive", "consent": "true"}
+        if consent:
+            data["image_consent"] = "true"
+        return client.post("/api/learn", data=data, files={"file": ("example.png", image, "image/png")})
+
+    rejected = submit(PNG, consent=False)
+    assert rejected.status_code == 428 and rejected.json()["code"] == "image_consent_required"
+    assert not requests
+
+    first, cached, different = submit(PNG), submit(PNG), submit(PNG + b"other bytes")
+    assert first.status_code == cached.status_code == different.status_code == 200
+    assert len(requests) == 2
+    assert first.json()["grounding"]["status"] == "image_provided"
+    assert first.json()["material"]["sent_to_provider"] is True
+    assert cached.json()["generation"]["cached"] is True
+    assert cached.json()["material"]["sent_to_provider"] is False
+    assert different.json()["generation"]["cached"] is False
+    assert submit(PNG, consent=False).status_code == 428
+    for request, image in zip(requests, (PNG, PNG + b"other bytes"), strict=True):
+        text, attachment = request["contents"][0]["parts"]
+        assert json.loads(text["text"]) == {"concept": "", "question": "", "pdf_pages": []}
+        assert attachment["inlineData"]["mimeType"] == "image/png"
+        assert b64decode(attachment["inlineData"]["data"]) == image
+        assert "example.png" not in json.dumps(request)
+    interactive.interactive_cache.clear()
+
+
 @pytest.mark.parametrize(("statuses", "headers", "expected"), [
     ([503, 200], {}, 200),
     ([503, 503], {}, 503),
@@ -136,21 +180,69 @@ def test_interactive_retries_only_short_model_overload(monkeypatch, statuses, he
         assert response.headers["Retry-After"] == headers["Retry-After"]
 
 
-def test_rejects_fabricated_quote_executable_fields_and_bounds_enforced_locally():
-    too_many_curves = [{**GRAPH["curves"][0], "id": f"curve_{index}"} for index in range(5)]
-    invalid_quiz = spec("보기 수 제한", GRAPH)
-    invalid_quiz["quiz"]["options"].append("네 번째")
-    invalid_outputs = [
-        spec("가짜 인용", GRAPH, [{"page": 1, "quote": "Not in the PDF"}]),
+def test_rejects_executable_fields_and_invalid_learning_core():
+    outputs = [
         spec("스크립트 삽입", {**GRAPH, "code": "alert(1)"}),
-        spec("곡선 수 제한", {**GRAPH, "curves": too_many_curves}),
-        spec("좌표 범위", {**GRAPH, "x_range": {"min": 0, "max": 1001}}),
-        invalid_quiz,
+        {**spec("핵심 설명 검증", GRAPH), "explanation": "<script>alert(1)</script>"},
     ]
-    for payload in invalid_outputs:
+    for payload in outputs:
         with pytest.raises(interactive.LearningError) as error:
-            interactive.parse_interactive(json.dumps(payload), [{"page": 1, "text": QUOTE}])
+            interactive.parse_interactive(json.dumps(payload), [])
         assert error.value.code == "invalid_interactive_spec"
+
+
+@pytest.mark.parametrize("changes", [
+    {"x_range": {"min": 4, "max": 0}},
+    {"x_range": {"min": 0, "max": 1001}},
+    {"curves": [{**GRAPH["curves"][0], "id": f"curve_{index}"} for index in range(5)]},
+])
+def test_out_of_bounds_or_invalid_graph_keeps_explanation_and_quiz(changes):
+    original = spec("시간과 이동 거리", {**GRAPH, **changes})
+    lesson = interactive.parse_interactive(json.dumps(original), [])
+    assert lesson.visualization.type == "text_explanation"
+    assert lesson.visualization.fallback_reason == interactive.VISUAL_FALLBACK
+    assert lesson.visualization.paragraphs == [original["explanation"]]
+    assert lesson.quiz.model_dump() == original["quiz"]
+
+
+def test_unmatched_quote_is_removed_and_valid_quote_is_preserved():
+    quotes = [{"page": 1, "quote": "Not in the PDF"}, {"page": 1, "quote": QUOTE}]
+    result = interactive.parse_interactive(json.dumps(spec("광합성", PROCESS, quotes)), [{"page": 1, "text": QUOTE}])
+    assert [quote.model_dump() for quote in result.source_quotes] == [quotes[1]]
+    assert result.visualization.type == "process_diagram"
+
+
+def test_image_overload_then_out_of_range_model_output_opens_same_material(monkeypatch):
+    calls = []
+    app.dependency_overrides[get_settings] = lambda: Settings(mode="gemini", api_key="stand-in-key", cache_ttl_seconds=0)
+    monkeypatch.setattr(interactive.random, "uniform", lambda low, high: 0.001)
+    result = spec("사진에 있는 직선의 기울기", {**GRAPH, "x_range": {"min": 0, "max": 5000}},
+                  [{"page": 21, "quote": "Invented source for an image"}])
+    result["quiz"]["correct_index"] = 3
+
+    def handle(request):
+        calls.append(request)
+        if len(calls) == 1:
+            return httpx.Response(503, json={"error": {"message": "The model is currently experiencing high demand."}})
+        return httpx.Response(200, json={"candidates": [{"finishReason": "STOP", "content": {
+            "parts": [{"text": json.dumps(result)}],
+        }}]})
+
+    monkeypatch.setattr(interactive, "GeminiProvider", lambda settings: GeminiProvider(settings, httpx.MockTransport(handle)))
+    response = TestClient(app).post("/api/learn",
+        data={"format": "interactive", "consent": "true", "image_consent": "true"},
+        files={"file": ("study.png", PNG, "image/png")})
+
+    assert response.status_code == 200
+    assert len(calls) == 2 and calls[0].content == calls[1].content
+    data = response.json()
+    assert data["lesson"]["viewer_url"] == "/lessons/interactive"
+    assert data["title"] == result["title"] and data["grounding"]["status"] == "image_provided"
+    lesson = data["lesson"]["spec"]
+    assert lesson["visualization"]["type"] == "text_explanation"
+    assert lesson["explanation"] == result["explanation"]
+    assert lesson["quiz"] is None and lesson["source_quotes"] == []
+    assert interactive.VISUAL_FALLBACK in data["notice"] and interactive.QUIZ_FALLBACK in data["notice"]
 
 
 def test_interactive_viewer_uses_local_hashed_script_in_opaque_sandbox():
